@@ -6,14 +6,20 @@ from utils import gen_utils
 import os,sys,csv,re
 
 class RecipeWebsiteScraper(object):
-    def __init__(self, home_page, browse_href, save_directory):
+    def __init__(self, home_page, browse_href, save_directory, pages_per_pickle=100):
         self.home_page = home_page
         self.browse_href = browse_href
         self.save_directory = save_directory
+        self.pages_per_pickle = pages_per_pickle
     def formUrl(self,href):
         return self.home_page + href
     def formatText(self,text):
         return gen_utils.replaceNonAscii(text.lstrip().rstrip())
+    def newPickleFile(self):
+        os.rename(self.pickle_file, os.path.join(self.save_directory, "pages_up_to_%s"%(int(self.page)-1)))
+        self.pickle_file = os.path.join(self.save_directory, "latest.p")
+        self.recipes = {}
+        self.page_in_file = 1
     def scrape(self, page_arguments = "?page=%s", num_pages=None):
         statusCode = 200
         # self.display = Display(visible=0, size=(1024, 768))
@@ -22,9 +28,11 @@ class RecipeWebsiteScraper(object):
 
         while statusCode == 200 and (not num_pages or self.page <= num_pages):
             print "SCRAPING PAGE #",self.page
+            if self.page_in_file > self.pages_per_pickle:
+                self.newPickleFile()
             current_page_url = self.formUrl(self.browse_href + page_arguments % self.page)
             statusCode = self.scrapePage(current_page_url)
-            gen_utils.updatePickleFile([self.page, self.recipes],self.pickle_file)
+            gen_utils.updatePickleFile([self.page, self.page_in_file, self.recipes],self.pickle_file)
 
             self.page += 1
             #try next page to see if just a problem with current page
@@ -33,16 +41,20 @@ class RecipeWebsiteScraper(object):
                 current_page = self.formUrl(self.browse_href + page_arguments%self.page)
                 statusCode = self.scrapePage(current_page_url)
                 gen_utils.updatePickleFile([self.page, self.recipes],self.pickle_file)
+            self.page_in_file += 1
         # self.driver.quit()
         # self.display.stop()
     def loadRecipes(self):
+        self.pickle_file = os.path.join(self.save_directory, "latest.p")
         savedInfo = gen_utils.loadObjectFromPickleFile(self.pickle_file)
         if savedInfo:
-            self.page, self.recipes = savedInfo
+            self.page, self.page_in_file, self.recipes = savedInfo
             self.page += 1
+            self.page_in_file += 1
         else:
             self.recipes = {}
             self.page = 1
+            self.page_in_file = 1
     def get_selenium_text_excluding_children(self,element):
         # return self.driver.execute_script("""
                     # return jQuery(arguments[0]).contents().filter(function() {
@@ -65,7 +77,6 @@ class AllRecipesScraper(RecipeWebsiteScraper):
         super(AllRecipesScraper,self).__init__('http://allrecipes.com',
                                                 '/recipes/?grouping=all',
                                                 save_directory)
-        self.pickle_file = 'pickle_files/all_recipes.p'
         self.loadRecipes()
     def scrape(self, num_pages=None):
         super(AllRecipesScraper,self).scrape(page_arguments="&page=%s", num_pages = num_pages)
@@ -219,58 +230,44 @@ class AllRecipesScraper(RecipeWebsiteScraper):
                                             new_footnote = {header:[]}
                                 footnotes.append(new_footnote)
                     reviewLinks = []
+                    review_section = div.find(id='reviews')
+                    for a in review_section.findAll('a'):
+                        if 'class' in a.attrs and 'review-detail__link' in a['class']:
+                            href = a.get('href')
+                            reviewLinks.append(url+'/'+href)
+                    reviews = []
+                    for i,review_link in enumerate(reviewLinks):
+                        review_page = web.getPage(review_link)
+                        if not review_page:
+                            continue
+                        else:
+                            review = {}
+                            parsed_review_page = BeautifulSoup(review_page.text)
+                            for p in parsed_review_page.findAll('p'):
+                                if 'itemprop' in p.attrs and 'reviewBody' in p['itemprop']:
+                                    review['text'] = self.formatText(p.text)
+                                    break
+                            for rdiv in parsed_review_page.findAll('div'):
+                                if 'class' in rdiv.attrs and 'review-detail__stars' in rdiv['class']:
+                                    for rrdiv in rdiv.findAll('div'):
+                                        if 'class' in rrdiv.attrs and 'rating-stars' in rrdiv['class']:
+                                            try:
+                                                review['rating'] = float(rrdiv['data-ratingstars'])
+                                            except:
+                                                break
+                                    break
+                                elif 'class' in rdiv.attrs and 'helpful-count' in rdiv['class']:
+                                    for num in rdiv.findAll('format-large-number'):
+                                        try:
+                                            review['helpful_count'] = int(num.get('number'))
+                                        except:
+                                            continue
+                                        else:
+                                            break
+                            reviews.append(review)
 
 
-                    # reviews = []
-                    # hidden = False
-                    # while not hidden:
-                        # more_outer = self.driver.find_element_by_class_name("more-button")
-                        # more_outer_class = more_outer.get_attribute('class')
-                        # if 'ng-hide' in more_outer_class:
-                            # hidden = True
-                        # else:
-                            # more_button = self.driver.find_element_by_class_name("moreReviews")
-                            # more_button.click()
-                    # reviewElts = self.driver.find_elements_by_class_name('review-container')
-                    # for i,reviewElt in enumerate(reviewElts):
-                        # review_html = reviewElt.get_attribute('innerHTML')
-                        # parsed_review = BeautifulSoup(review_html)
-                        # for a in parsed_review.findAll('a'):
-                            # if 'class' in a.attrs and 'review-detail__link' in a['class']:
-                                # href = a.get('href')
-                                # reviewLinks.append(url+'/'+href)
-                    # for i,review_link in enumerate(reviewLinks):
-                        # review_page = web.getPage(review_link)
-                        # if not review_page:
-                            # continue
-                        # else:
-                            # review = {}
-                            # parsed_review_page = BeautifulSoup(review_page.text)
-                            # for p in parsed_review_page.findAll('p'):
-                                # if 'itemprop' in p.attrs and 'reviewBody' in p['itemprop']:
-                                    # review['text'] = self.formatText(p.text)
-                                    # break
-                            # for rdiv in parsed_review_page.findAll('div'):
-                                # if 'class' in rdiv.attrs and 'review-detail__stars' in rdiv['class']:
-                                    # for rrdiv in rdiv.findAll('div'):
-                                        # if 'class' in rrdiv.attrs and 'rating-stars' in rrdiv['class']:
-                                            # try:
-                                                # review['rating'] = float(rrdiv['data-ratingstars'])
-                                            # except:
-                                                # break
-                                    # break
-                                # elif 'class' in rdiv.attrs and 'helpful-count' in rdiv['class']:
-                                    # for num in rdiv.findAll('format-large-number'):
-                                        # try:
-                                            # review['helpful_count'] = int(num.get('number'))
-                                        # except:
-                                            # continue
-                                        # else:
-                                            # break
-                            # reviews.append(review)
-
-
-            self.recipes[url] = {'metadata': metadata, 'instructions': instructions, 'notes': notes, 'footnotes': footnotes}#, 'reviews': reviews}
+            self.recipes[url] = {'metadata': metadata, 'instructions': instructions, 'notes': notes, 'footnotes': footnotes, 'reviews': reviews}
 if __name__ == '__main__':
-    scraper = AllRecipesScraper('/scratch/all_recipes')
-    scraper.scrape(num_pages=100)
+    scraper = AllRecipesScraper('pickle_files/all_recipes')
+    scraper.scrape()

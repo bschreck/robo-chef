@@ -16,7 +16,7 @@ class RecipeWebsiteScraper(object):
     def formatText(self,text):
         return gen_utils.replaceNonAscii(text.lstrip().rstrip())
     def newPickleFile(self):
-        os.rename(self.pickle_file, os.path.join(self.save_directory, "pages_up_to_%s"%(int(self.page)-1)))
+        os.rename(self.pickle_file, os.path.join(self.save_directory, "pages_up_to_%s.p"%(int(self.page)-1)))
         self.pickle_file = os.path.join(self.save_directory, "latest.p")
         self.recipes = {}
         self.page_in_file = 1
@@ -32,7 +32,10 @@ class RecipeWebsiteScraper(object):
                 self.newPickleFile()
             current_page_url = self.formUrl(self.browse_href + page_arguments % self.page)
             statusCode = self.scrapePage(current_page_url)
+            sys.stdout.flush()
             gen_utils.updatePickleFile([self.page, self.page_in_file, self.recipes],self.pickle_file)
+            print "updated pickle file"
+            sys.stdout.flush()
 
             self.page += 1
             #try next page to see if just a problem with current page
@@ -40,13 +43,17 @@ class RecipeWebsiteScraper(object):
                 print "TRYING NEXT PAGE"
                 current_page = self.formUrl(self.browse_href + page_arguments%self.page)
                 statusCode = self.scrapePage(current_page_url)
-                gen_utils.updatePickleFile([self.page, self.recipes],self.pickle_file)
+                gen_utils.updatePickleFile([self.page, self.page_in_file, self.recipes],self.pickle_file)
+                sys.stdout.flush()
             self.page_in_file += 1
         # self.driver.quit()
         # self.display.stop()
     def loadRecipes(self):
         self.pickle_file = os.path.join(self.save_directory, "latest.p")
         savedInfo = gen_utils.loadObjectFromPickleFile(self.pickle_file)
+
+        self.page, self.page_in_file, self.recipes = savedInfo
+
         if savedInfo:
             self.page, self.page_in_file, self.recipes = savedInfo
             self.page += 1
@@ -85,6 +92,8 @@ class AllRecipesScraper(RecipeWebsiteScraper):
         page = web.getPage(url)
         if not page:
             return 0
+        elif not page.text or page.status_code != 200:
+            return page.status_code
         parsed = BeautifulSoup(page.text)
         for section in parsed.findAll('section'):
             if 'class' in section.attrs and 'recipe_hub' in section['class']:
@@ -107,6 +116,9 @@ class AllRecipesScraper(RecipeWebsiteScraper):
         #self.driver.get(url)
         if not page:
             print "no page:", url
+            return
+        elif not page.text or page.status_code != 200:
+            return
         else:
             print "success:", url
             parsed = BeautifulSoup(page.text)
@@ -238,7 +250,7 @@ class AllRecipesScraper(RecipeWebsiteScraper):
                     reviews = []
                     for i,review_link in enumerate(reviewLinks):
                         review_page = web.getPage(review_link)
-                        if not review_page:
+                        if not review_page or not review_page.text:
                             continue
                         else:
                             review = {}

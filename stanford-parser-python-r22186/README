@@ -1,0 +1,14 @@
+We developed a python interface to the Stanford Parser.  It uses JPype
+to create a Java virtual machine and convert between python and Java.
+Most of the code is about getting the Stanford Dependencies, but it's
+easy to add API to call any method on the parser.
+
+JPype is included; you can set compile it by running "rake setup" in
+3rdParty/jpype.  The Stanford Parser can be downloaded and installed
+by running "rake download; rake setup" in 3rdParty/stanford-parser".
+Otherwise set the environment variable STANFORD_PARSER_HOME to the
+location of the installed directory.  It loads the grammar file from
+the unzipped version, because the load is a few seconds faster.  If
+you haven't gunzipped the .ser file you will get an error.
+
+To see how to use it, look at parser_test.py.

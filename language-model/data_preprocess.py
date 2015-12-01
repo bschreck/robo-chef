@@ -10,7 +10,7 @@ def extractRecipeInstructionsFromPickleFile(filename):
 	f.close()
 
 	instruction_steps = []
-	for recipe in data[1].values():
+	for recipe in data[2].values():
 		instruction_steps.extend( recipe['instructions'] )
 
 	return instruction_steps
@@ -25,7 +25,7 @@ def generateLanguageModelData(pickle_file_path, outfile):
 	for step in instruction_steps:
 		chunks = chunkStep(step)
 		for chunk in chunks:
-			segments.append( chunk + ' <END>\n' )
+			segments.append( ' ' + chunk + ' \n' ) # pad segment
 
 	segments = subWithUnkown(processesPuntuation(segments))
 
@@ -51,7 +51,7 @@ def subWithUnkown(segments):
 			if tokens[t] > UNK_THRESHOLD:
 				new_seg.append(t)
 			else:
-				new_seg.append('<UNK>')
+				new_seg.append('<unk>')
 		new_segments.append(' '.join(new_seg))
 	return new_segments
 
@@ -75,6 +75,17 @@ def splitData(infile, holdout_frac, train_out, test_out):
 	ftest = open(test_out,'w')
 	ftest.writelines(test)
 	ftest.close()
+
+	print countWords(data)
+
+
+def countWords(data):
+	words = set()
+	for x in data:
+		for w in x.split():
+			words.add(w)
+	return len(words)
+
 
 
 

@@ -1,0 +1,4 @@
+task :setup do
+  sh "unzip JPype-0.5.4.1.zip"
+  sh "cd JPype-0.5.4.1 && python setup.py build"
+end

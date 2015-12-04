@@ -38,7 +38,7 @@ class RecipeNet(object):
   def __init__(self, source_vocab_size, buckets, size,
                num_layers, max_gradient_norm, batch_size, learning_rate,
                learning_rate_decay_factor, use_lstm=False,
-               num_samples=512, forward_only=False):
+               forward_only=False):
     """Create the model.
     Args:
       source_vocab_size: size of the source vocabulary.

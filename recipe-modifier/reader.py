@@ -1,7 +1,6 @@
 """Utilities for parsing PTB text files."""
 from __future__ import absolute_import
 from __future__ import division
-from __future__ import print_function
 
 import collections
 import os
@@ -16,6 +15,8 @@ import tensorflow as tf
 
 from tensorflow.python.platform import gfile
 import string
+import generate_refinements as gen
+from itertools import chain
 
 
 def _read_words(filename):
@@ -34,7 +35,7 @@ def _read_max_phrase_num_and_len(filename):
 
 
 
-def _build_vocab(filename):
+def build_vocab(filename):
   data = _read_words(filename)
 
   counter = collections.Counter(data)
@@ -95,55 +96,123 @@ def _file_to_word_ids(filename, word_to_id, unknown_word_id,buckets):
       word_i += 1
   return recipes
 
-def ptb_raw_data(data_path=None):
+def recipe_raw_data(word_to_id, initial_buckets, data_path=None, corpus='train'):
+    if corpus == 'train':
+        filename = "recipes_train.txt"
+    elif corpus == 'val':
+        filename = "recipes_valid.txt"
+    else:
+        filename = "recipes_test.txt"
+    path = os.path.join(data_path, filename)
+    max_phrases_path = os.path.join(data_path, "max_phrases.txt")
 
-  train_path = os.path.join(data_path, "recipes_train.txt")
-  valid_path = os.path.join(data_path, "recipes_valid.txt")
-  test_path = os.path.join(data_path, "recipes_test.txt")
-  max_phrases_path = os.path.join(data_path, "max_phrases.txt")
+    max_phrase_num, max_phrase_len = _read_max_phrase_num_and_len(max_phrases_path)
+    buckets=initial_buckets
+    buckets.append((max_phrase_num, max_phrase_len))
 
-  max_phrase_num, max_phrase_len = _read_max_phrase_num_and_len(max_phrases_path)
-  buckets=[(10,15), (15,20), (20,25), (25,30), (30,35)]
-  buckets.append((max_phrase_num, max_phrase_len))
+    unknown_word_id = len(word_to_id)
+    data = _file_to_word_ids(path, word_to_id, unknown_word_id, buckets)
+    vocabulary = unknown_word_id + 1
+    return data, vocabulary, max_phrase_num, max_phrase_len,buckets
 
-  word_to_id = _build_vocab(train_path)
-  unknown_word_id = len(word_to_id)
-  train_data = _file_to_word_ids(train_path, word_to_id, unknown_word_id, buckets)
-  valid_data = _file_to_word_ids(valid_path, word_to_id,unknown_word_id,  buckets)
-  test_data = _file_to_word_ids(test_path, word_to_id, unknown_word_id, buckets)
-  vocabulary = unknown_word_id + 1
-  return train_data, valid_data, test_data, vocabulary, max_phrase_num, max_phrase_len,buckets
-
-def _draw_buckets(fraction_each_bucket, batch_size):
-    bucket_sel = np.random.random(size=batch_size)
-    num_each_bucket = collections.defaultdict(int)
-    for bucket_draw in bucket_sel:
-        for f,b in fraction_each_bucket:
-            if bucket_draw < f:
-                num_each_bucket[buckets[b]] += 1
-                break
-    return num_each_bucket
-def ptb_iterator(raw_data, batch_size):
+def _draw_buckets(fraction_each_bucket, batch_size, buckets):
+    bucket_sel = np.random.random()
+    for f,b in fraction_each_bucket:
+        if bucket_sel < f:
+            return buckets[b]
+    return buckets[b]
+def recipe_iterator(raw_data, batch_size, all_buckets=False):
+    for bucket in raw_data:
+        np.random.shuffle(raw_data[bucket])
     buckets = sorted(raw_data.keys(), key=lambda x:x[0])
+
     total_each_bucket = np.array([len(raw_data[b]) for b in buckets])
     data_len = sum(total_each_bucket)
-    fraction_each_bucket = total_each_bucket / data_len
-    fraction_each_bucket = [[f,i] for i,f in enumerate(fraction_each_bucket)]
-    fraction_each_bucket = sorted(fraction_each_bucket, key=lambda x:x[0])
-    for i,f in enumerate(fraction_each_bucket[1:]):
-        fraction_each_bucket[i+1][0] = f[0] + fraction_each_bucket[i][0]
+    if not all_buckets:
+        fraction_each_bucket = total_each_bucket / data_len
+        fraction_each_bucket = [[f,i] for i,f in enumerate(fraction_each_bucket)]
+        fraction_each_bucket = sorted(fraction_each_bucket, key=lambda x:x[0])
+        for i,f in enumerate(fraction_each_bucket[1:]):
+            fraction_each_bucket[i+1][0] = f[0] + fraction_each_bucket[i][0]
+
     batch_len = data_len // batch_size
     bucket_i = collections.defaultdict(int)
-    for i in range(batch_len):
-        num_each_bucket = _draw_buckets(fraction_each_bucket, batch_size)
-        current_data = {}
-        for bucket in num_each_bucket:
-            new_bucket_i = bucket_i[bucket] + num_each_bucket[bucket]
-            current_data[bucket] = raw_data[bucket][bucket_i[bucket]:new_bucket_i]
-            bucket_i[bucket] = new_bucket_i
-        yield current_data
 
-if __name__ == '__main__':
-    train, valid,test,vocab,max_phrase_num,max_phrase_len,buckets = ptb_raw_data(data_path = '.')
-    for i,batch in enumerate(ptb_iterator(train, 10)):
-        pass
+    num_batches = len(buckets) if all_buckets else 1
+    for i in xrange(batch_len):
+        bucketed_batches = {}
+        for batch in xrange(num_batches):
+            if all_buckets:
+                bucket = buckets[batch]
+            else:
+                bucket = _draw_buckets(fraction_each_bucket, batch_size, buckets)
+            new_bucket_i = bucket_i[bucket] + batch_size
+            current_data = raw_data[bucket][bucket_i[bucket]:new_bucket_i]
+            bucket_i[bucket] = new_bucket_i
+            if all_buckets:
+                bucketed_batches[bucket] = current_data
+            else:
+                yield bucket, current_data
+        if all_buckets:
+            yield bucketed_batches
+
+def generate_labeled_batch(batch_recipe_list):
+    labels, refinements, recipes = zip(*[gen.removals(recipe) for recipe in batch_recipe_list])
+    labels = np.array(list(chain.from_iterable(i for i in labels)))
+    refinements = np.array(list(chain.from_iterable(i for i in refinements)))
+    recipes = list(chain.from_iterable(i for i in recipes))
+    l = len(recipes[0])
+    for recipe in recipes:
+        if len(recipe) != l:
+            print 'wtf'
+    sys.exit()
+    expanded_recipes = np.empty((len(recipes), 2*len(recipes[0]), len(recipes[0][0])))
+    print expanded_recipes.shape
+    for i,recipe in enumerate(recipes):
+        blank_line = [-1]*len(recipe[0])
+        print len(recipe)
+        expanped_recipe =  np.array([recipe[j//2] if j%2==0 else blank_line for j in xrange(2*len(recipe))])
+        print expanped_recipe.shape
+        expanded_recipes[i,:,:] = np.array([recipe[j//2] if j%2==0 else blank_line for j in xrange(2*len(recipe))])
+    #print recipes
+    print expanded_recipes.shape
+    sys.exit()
+    num_in_bucket = len(labels)
+    shuffle = range(num_in_bucket)
+    np.random.shuffle(shuffle)
+    labels = labels[shuffle]
+    refinements = refinements[shuffle]
+    recipes = recipes[shuffle]
+    return labels, refinements, recipes
+
+def batch_iterator(word_to_id, pre_generation_batch_size, corpus, initial_buckets, all_buckets=False):
+    #loops continuously over corpus
+    data,vocab,max_phrase_num,max_phrase_len, buckets= recipe_raw_data(word_to_id, initial_buckets, data_path = '.', corpus=corpus)
+    pre_generation_batch_size = 10
+    start = True
+    while True:
+        if start:
+            yield buckets
+            start = False
+        recipes = recipe_iterator(data, pre_generation_batch_size, all_buckets=all_buckets)
+        for i,batch in enumerate(recipes):
+            if all_buckets:
+                data = batch
+                labeled_data = {}
+                for bucket_id,bucket in enumerate(buckets):
+                    labels, refinements, recipes = generate_labeled_batch(data[bucket])
+                    labeled_data[bucket_id] = (labels, refinements, recipes)
+                yield labeled_data
+            else:
+                bucket, data = batch
+                bucket_id = buckets.index(bucket)
+                labels, refinements, recipes = generate_labeled_batch(data)
+                yield bucket_id, labels, refinements, recipes
+
+word_to_id = build_vocab('./recipes_train.txt')
+buckets = [(10,15), (15,20), (20,25), (25,30), (30,35)]
+b = batch_iterator(word_to_id, 10,'train', buckets)
+b.next()
+print b.next()
+# print batch_iterator(word_to_id, 10,'train').next()[0]
+#print batch_iterator(word_to_id, 10,'train', all_buckets=True).next().values()[4][0]

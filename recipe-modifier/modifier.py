@@ -40,9 +40,9 @@ import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
-from tensorflow.models.rnn.translate import data_utils
-from tensorflow.models.rnn.translate import seq2seq_model
 from tensorflow.python.platform import gfile
+import reader
+import net_defn
 
 
 tf.app.flags.DEFINE_float("learning_rate", 0.5, "Learning rate.")
@@ -52,14 +52,16 @@ tf.app.flags.DEFINE_float("max_gradient_norm", 5.0,
                           "Clip gradients to this norm.")
 tf.app.flags.DEFINE_integer("batch_size", 64,
                             "Batch size to use during training.")
-tf.app.flags.DEFINE_integer("pre_generation_batch_size", 64,
-                            "Batch size to use before generating refinements.")
 tf.app.flags.DEFINE_integer("size", 1024, "Size of each model layer.")
-tf.app.flags.DEFINE_integer("num_layers", 3, "Number of layers in the model.")
-tf.app.flags.DEFINE_integer("en_vocab_size", 40000, "English vocabulary size.")
-tf.app.flags.DEFINE_integer("fr_vocab_size", 40000, "French vocabulary size.")
-tf.app.flags.DEFINE_string("data_dir", "/tmp", "Data directory")
-tf.app.flags.DEFINE_string("train_dir", "/tmp", "Training directory.")
+tf.app.flags.DEFINE_integer("num_input_layers", 3, "Number of layers in the model.")
+tf.app.flags.DEFINE_integer("num_output_layers", 1, "Number of layers in the model.")
+
+tf.app.flags.DEFINE_string("data_dir", "/local/robotChef/recipe-modifier", "Data directory")
+tf.app.flags.DEFINE_string("train_corpus", "recipes_train.txt", "Training data file")
+tf.app.flags.DEFINE_string("val_corpus", "recipes_valid.txt", "Validation data file")
+tf.app.flags.DEFINE_string("test_corpus", "recipes_test.txt", "Test data file")
+tf.app.flags.DEFINE_string("max_phrases_file", "max_phrases.txt", "File that contains max_num_phrases and max_len_phrase")
+tf.app.flags.DEFINE_string("train_dir", "/local/robotChef/recipe-modifier/train", "Training directory.")
 tf.app.flags.DEFINE_integer("max_train_data_size", 0,
                             "Limit on the size of training data (0: no limit).")
 tf.app.flags.DEFINE_integer("steps_per_checkpoint", 200,
@@ -76,47 +78,13 @@ FLAGS = tf.app.flags.FLAGS
 _initial_buckets = [(10,15), (15,20), (20,25), (25,30), (30,35)]
 
 
-# def read_data(source_path, target_path, max_size=None):
-  # """Read data from source and target files and put into buckets.
-  # Args:
-    # source_path: path to the files with token-ids for the source language.
-    # target_path: path to the file with token-ids for the target language;
-      # it must be aligned with the source file: n-th line contains the desired
-      # output for n-th line from the source_path.
-    # max_size: maximum number of lines to read, all other will be ignored;
-      # if 0 or None, data files will be read completely (no limit).
-  # Returns:
-    # data_set: a list of length len(_buckets); data_set[n] contains a list of
-      # (source, target) pairs read from the provided data files that fit
-      # into the n-th bucket, i.e., such that len(source) < _buckets[n][0] and
-      # len(target) < _buckets[n][1]; source and target are lists of token-ids.
-  # """
-  # data_set = [[] for _ in _buckets]
-  # with gfile.GFile(source_path, mode="r") as source_file:
-    # with gfile.GFile(target_path, mode="r") as target_file:
-      # source, target = source_file.readline(), target_file.readline()
-      # counter = 0
-      # while source and target and (not max_size or counter < max_size):
-        # counter += 1
-        # if counter % 100000 == 0:
-          # print("  reading data line %d" % counter)
-          # sys.stdout.flush()
-        # source_ids = [int(x) for x in source.split()]
-        # target_ids = [int(x) for x in target.split()]
-        # target_ids.append(data_utils.EOS_ID)
-        # for bucket_id, (source_size, target_size) in enumerate(_buckets):
-          # if len(source_ids) < source_size and len(target_ids) < target_size:
-            # data_set[bucket_id].append([source_ids, target_ids])
-            # break
-        # source, target = source_file.readline(), target_file.readline()
-  # return data_set
 
-
-def create_model(session, buckets, forward_only):
+def create_model(session, vocab_size, buckets, forward_only):
   """Create translation model and initialize or load parameters in session."""
   model = net_defn.RecipeNet(
-      FLAGS.vocab_size, buckets,
-      FLAGS.size, FLAGS.num_layers, FLAGS.max_gradient_norm, FLAGS.batch_size,
+      vocab_size, buckets,
+      FLAGS.size, FLAGS.num_input_layers, FLAGS.num_output_layers,
+      FLAGS.max_gradient_norm, FLAGS.batch_size,
       FLAGS.learning_rate, FLAGS.learning_rate_decay_factor,
       use_lstm=True, forward_only=forward_only)
   ckpt = tf.train.get_checkpoint_state(FLAGS.train_dir)
@@ -131,8 +99,8 @@ def create_model(session, buckets, forward_only):
 
 def train():
   # Prepare WMT data.
-  print("Preparing WMT data in %s" % FLAGS.data_dir)
   word_to_id = reader.build_vocab(os.path.join(FLAGS.data_dir, "recipes_train.txt"))
+  vocab_size = len(word_to_id)
 
   with tf.Session() as sess:
 
@@ -140,15 +108,17 @@ def train():
     # Read data into buckets and compute their sizes.
     print ("Reading development and training data (limit: %d)."
            % FLAGS.max_train_data_size)
-    dev_set = reader.batch_iterator(FLAGS.pre_generation_batch_size, 'val', _buckets, all_buckets=True)
-    train_set = reader.batch_iterator(FLAGS.pre_generation_batch_size, 'train', _buckets, all_buckets=False)
+    dev_set = reader.batch_iterator(word_to_id, FLAGS.batch_size, 'val', _initial_buckets, all_buckets=True)
+    train_set = reader.batch_iterator(word_to_id, FLAGS.batch_size, 'train', _initial_buckets, all_buckets=False)
     #First thing both return is the buckets, everything after is data
     buckets = train_set.next()
     dev_set.next()
+    print("BUCKETS:", buckets)
 
     # Create model.
-    print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
-    model = create_model(sess, buckets, False)
+    print("Creating %d input layers and %d output layers of %d units." % (FLAGS.num_input_layers, FLAGS.num_output_layers, FLAGS.size))
+    model = create_model(sess, vocab_size, buckets, False)
+    print ("created model")
 
     # This is the training loop.
     step_time, loss = 0.0, 0.0
@@ -158,12 +128,18 @@ def train():
       # Get a batch and make a step.
       start_time = time.time()
       bucket_id, target_weights, encoder_inputs, decoder_inputs = train_set.next()
+      print("got first batch")
+      print("bucket_id:", bucket_id)
+      print("target_weights:", target_weights.shape)
+      print("decoder_inputs:", decoder_inputs.shape)
 
       _, step_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
                                    target_weights, bucket_id, False)
+      print("got first loss", step_loss)
       step_time += (time.time() - start_time) / FLAGS.steps_per_checkpoint
       loss += step_loss / FLAGS.steps_per_checkpoint
       current_step += 1
+      sys.exit()
 
       # Once in a while, we save checkpoint, print statistics, and run evals.
       if current_step % FLAGS.steps_per_checkpoint == 0:
@@ -235,9 +211,7 @@ def decode():
 
 
 def main(_):
-  if FLAGS.self_test:
-    self_test()
-  elif FLAGS.decode:
+  if FLAGS.decode:
     decode()
   else:
     train()

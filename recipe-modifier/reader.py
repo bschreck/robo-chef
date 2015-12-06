@@ -6,6 +6,7 @@ import collections
 import os
 import sys
 import time
+import copy
 
 import tensorflow.python.platform
 
@@ -17,20 +18,44 @@ from tensorflow.python.platform import gfile
 import string
 import generate_refinements as gen
 from itertools import chain
+FLAGS = tf.app.flags.FLAGS
 
+#TODO: TRY DIFFERENT WAYS TO SPLIT SENTENCES (maybe don't replace all punctuation?)
+#IDEALLY PHRASES WILL ALREADY BY SPLIT AT THIS POINT thought
+#see if we need GO symbol?"
+#also should we make a symbol for digits?
+
+_EOP = '<eop>'
+_EOR = '<eor>'
+
+PAD_ID = 0
+UNK_ID = 1
 
 def _read_words(filename):
-  replace_punctuation = string.maketrans(string.punctuation, ' '*len(string.punctuation))
-  #separate recipes with <eor>
-  #separate phrases with <eop>
-  with gfile.GFile(filename, "r") as f:
-    return f.read().translate(replace_punctuation).replace("\t"," <eop> ").replace("\n", " <eor> ").split()
+    replace_punctuation = string.maketrans(string.punctuation, ' '*len(string.punctuation))
+    #separate recipes with <eor>
+    #separate phrases with <eop>
+    with gfile.GFile(filename, "r") as f:
+        return f.read().translate(replace_punctuation).replace("\t"," <eop> ").replace("\n", " <eor> ").split()
+
+def _read_lines(filename):
+    replace_punctuation = string.maketrans(string.punctuation, ' '*len(string.punctuation))
+    #separate recipes with <eor>
+    #separate phrases with <eop>
+    with gfile.GFile(filename, "r") as f:
+        for line in f:
+            no_punc = line.translate(replace_punctuation)
+            by_tab = no_punc.split('\t')
+            label = by_tab[0]
+            refinement = by_tab[1]
+            recipe = by_tab[2:]
+            yield label, refinement, recipe
 
 def _read_max_phrase_num_and_len(filename):
-  with gfile.GFile(filename, "r") as f:
-    max_phrase_num = int(f.readline().split()[1])
-    max_phrase_len = int(f.readline().split()[1])
-  return max_phrase_num, max_phrase_len
+    with gfile.GFile(filename, "r") as f:
+        max_phrase_num = int(f.readline().split()[1])
+        max_phrase_len = int(f.readline().split()[1])
+    return max_phrase_num, max_phrase_len
 
 
 
@@ -42,78 +67,89 @@ def build_vocab(filename):
   count_pairs = sorted(counter.items(), key=lambda x: -x[1])
 
   words, _ = list(zip(*count_pairs))
+  words = list(words)
+  words.insert(0,'_UNK')
+  words.insert(0,'_PAD')
   word_to_id = dict(zip(words, range(len(words))))
 
   return word_to_id
 
+def _get_bucket(num_words, num_phrases, buckets):
+    #num_words and num_phrases must be less than or equal to the max in the bucket +1,
+    #we're accounting for the <eop> at the end of each phrase
+    #and the <eor> as its own phrase at the end of the recipe
+    for bucket in buckets:
+        if num_phrases <= bucket[0]+1 and num_words <= bucket[1]+1:
+            return bucket
+    raise ValueError, "num_words %s or num_phrases %s too long"%(num_words, num_phrases)
 
 def _file_to_word_ids(filename, word_to_id, unknown_word_id,buckets):
-  #buckets = [(max number of phrases, max number of words per phrase)]
-  #last bucket needs to be max of both values
-  data = _read_words(filename)
-  recipes = {}
-  for bucket in buckets:
-      recipes[bucket] = []
-  phrase_i = 0
-  word_i = 0
-  # current_recipe = np.zeros((max_phrase_num+1,max_phrase_len+1), dtype=np.int32)
-  # current_recipe.fill(-1)
-  current_recipe = [[]]
-  max_current_num_words = 0
+    #buckets = [(max number of phrases, max number of words per phrase)]
+    #last bucket needs to be max of both values
+    recipes = {}
+    refinements = {}
+    labels = {}
+    for bucket in buckets:
+        recipes[bucket] = []
+        labels[bucket] = []
+        refinements[bucket] = []
+    for line in _read_lines(filename):
+        label, refinement, recipe = line
+        label = int(label)
+        if label < 0:
+            #insertion
+            label = 2*(-label-1) + 1
+        else:
+            #replacement
+            label = 2*(label-1)
+        refinement = [word_to_id[w] if w in word_to_id else unknown_word_id for w in refinement.split()]
+        refinement.append(word_to_id['<eop>'])
+        max_current_num_words = len(refinement)
 
-  for word in data:
-    #each recipe can be at maximum max_phrase_num+1 phrases long,
-    #with the 1 added for the <eor> word
-    #each phrase can at maximum max_phrase_len+1 words long,
-    #with the 1 added for the <eop> word
-    if word in word_to_id:
-        current_recipe[-1].append(word_to_id[word])
-    else:
-        current_recipe[-1].append(unknown_word_id)
-    if word == "<eop>":
-      if word_i > max_current_num_words:
-        max_current_num_words = word_i
-      #make a new phrase
-      current_recipe.append([])
-      word_i = 0
-      phrase_i += 1
-    elif word == "<eor>":
-      for bucket in buckets:
-        if phrase_i <= bucket[0] and max_current_num_words <= bucket[1]:
-          current_bucket = bucket
-          break
-      for phrase in current_recipe:
-        if len(phrase) < current_bucket[1]:
-          phrase.extend([-1]*(current_bucket[1]-len(phrase)))
-      if len(current_recipe) < current_bucket[0]:
-        current_recipe.extend([[-1]*current_bucket[1] for _ in xrange(current_bucket[0]-len(current_recipe))])
-      recipes[current_bucket].append(current_recipe)
-      phrase_i = 0
-      word_i = 0
-      max_current_num_words = 0
-      current_recipe = [[]]
-    else:
-      word_i += 1
-  return recipes
+        recipe = [phrase.split() for phrase in recipe]
+        for i,phrase in enumerate(recipe[:-1]):
+            recipe[i] = [word_to_id[w] if w in word_to_id else unknown_word_id for w in phrase]
+            recipe[i].append(word_to_id['<eop>'])
+            if len(recipe[i]) > max_current_num_words:
+                max_current_num_words = len(recipe[i])
+        recipe[-1].append(word_to_id['<eor>'])
+        current_num_phrases = len(recipe)
+        bucket = _get_bucket(max_current_num_words, current_num_phrases, buckets)
 
-def recipe_raw_data(word_to_id, initial_buckets, data_path=None, corpus='train'):
+        nprecipe = np.zeros((bucket[0]+1,bucket[1]+1), dtype=np.int32)
+        nprecipe.fill(PAD_ID)
+        nprefinement = np.zeros(bucket[1]+1, dtype=np.int32)
+        nprefinement.fill(PAD_ID)
+        nprefinement[:len(refinement)] = refinement
+
+        for i,phrase in enumerate(recipe):
+            nprecipe[i,:len(phrase)] = np.array(phrase)
+
+        recipes[bucket].append(nprecipe)
+        labels[bucket].append(label)
+        refinements[bucket].append(nprefinement)
+    for bucket in buckets:
+        labels[bucket] = np.array(labels[bucket], dtype=np.int32)
+        refinements[bucket] = np.array(refinements[bucket], dtype=np.int32)
+        recipes[bucket] = np.array(recipes[bucket], dtype=np.int32)
+    return labels, refinements, recipes
+
+def recipe_raw_data(word_to_id, initial_buckets, corpus='train'):
     if corpus == 'train':
-        filename = "recipes_train.txt"
+        filename = os.path.join(FLAGS.data_dir, FLAGS.train_corpus)
     elif corpus == 'val':
-        filename = "recipes_valid.txt"
+        filename = os.path.join(FLAGS.data_dir, FLAGS.val_corpus)
     else:
-        filename = "recipes_test.txt"
-    path = os.path.join(data_path, filename)
-    max_phrases_path = os.path.join(data_path, "max_phrases.txt")
+        filename = os.path.join(FLAGS.data_dir, FLAGS.test_corpus)
+    max_phrases_path = os.path.join(FLAGS.data_dir, FLAGS.max_phrases_file)
 
     max_phrase_num, max_phrase_len = _read_max_phrase_num_and_len(max_phrases_path)
-    buckets=initial_buckets
+    buckets=copy.copy(initial_buckets)
     buckets.append((max_phrase_num, max_phrase_len))
 
-    unknown_word_id = len(word_to_id)
-    data = _file_to_word_ids(path, word_to_id, unknown_word_id, buckets)
-    vocabulary = unknown_word_id + 1
-    return data, vocabulary, max_phrase_num, max_phrase_len,buckets
+    labels, refinements, recipes = _file_to_word_ids(filename, word_to_id, UNK_ID, buckets)
+    vocabulary = len(word_to_id)
+    return labels, refinements, recipes, vocabulary, max_phrase_num, max_phrase_len,buckets
 
 def _draw_buckets(fraction_each_bucket, batch_size, buckets):
     bucket_sel = np.random.random()
@@ -121,12 +157,16 @@ def _draw_buckets(fraction_each_bucket, batch_size, buckets):
         if bucket_sel < f:
             return buckets[b]
     return buckets[b]
-def recipe_iterator(raw_data, batch_size, all_buckets=False):
-    for bucket in raw_data:
-        np.random.shuffle(raw_data[bucket])
-    buckets = sorted(raw_data.keys(), key=lambda x:x[0])
+def recipe_iterator(labels, refinements, recipes, batch_size, all_buckets=False):
+    for bucket in labels:
+        shuffled_indices = range(len(labels[bucket]))
+        np.random.shuffle(shuffled_indices)
+        labels[bucket] = labels[bucket][shuffled_indices]
+        refinements[bucket] = refinements[bucket][shuffled_indices]
+        recipes[bucket] = recipes[bucket][shuffled_indices]
+    buckets = sorted(labels.keys(), key=lambda x:x[0])
 
-    total_each_bucket = np.array([len(raw_data[b]) for b in buckets])
+    total_each_bucket = np.array([len(labels[b]) for b in buckets])
     data_len = sum(total_each_bucket)
     if not all_buckets:
         fraction_each_bucket = total_each_bucket / data_len
@@ -140,79 +180,101 @@ def recipe_iterator(raw_data, batch_size, all_buckets=False):
 
     num_batches = len(buckets) if all_buckets else 1
     for i in xrange(batch_len):
-        bucketed_batches = {}
+        labels_bucketed_batches = {}
+        refinements_bucketed_batches = {}
+        recipes_bucketed_batches = {}
         for batch in xrange(num_batches):
             if all_buckets:
-                bucket = buckets[batch]
+                bucket_id = batch
+                bucket = buckets[bucket_id]
             else:
                 bucket = _draw_buckets(fraction_each_bucket, batch_size, buckets)
             new_bucket_i = bucket_i[bucket] + batch_size
-            current_data = raw_data[bucket][bucket_i[bucket]:new_bucket_i]
+            current_recipes = recipes[bucket][bucket_i[bucket]:new_bucket_i, :,:]
+            current_labels = labels[bucket][bucket_i[bucket]:new_bucket_i]
+            current_refinements = refinements[bucket][bucket_i[bucket]:new_bucket_i,:]
             bucket_i[bucket] = new_bucket_i
             if all_buckets:
-                bucketed_batches[bucket] = current_data
+                labels_bucketed_batches[bucket_id] = current_labels
+                refinements_bucketed_batches[bucket_id] = current_refinements
+                recipes_bucketed_batches[bucket_id] = current_recipes
             else:
-                yield bucket, current_data
+                yield bucket, current_labels, current_refinements, current_recipes
         if all_buckets:
-            yield bucketed_batches
+            yield labels_bucketed_batches, refinements_bucketed_batches, recipes_bucketed_batches
 
-def generate_labeled_batch(batch_recipe_list):
-    labels, refinements, recipes = zip(*[gen.removals(recipe) for recipe in batch_recipe_list])
-    labels = np.array(list(chain.from_iterable(i for i in labels)))
-    refinements = np.array(list(chain.from_iterable(i for i in refinements)))
-    recipes = list(chain.from_iterable(i for i in recipes))
-    l = len(recipes[0])
-    for recipe in recipes:
-        if len(recipe) != l:
-            print 'wtf'
-    sys.exit()
-    expanded_recipes = np.empty((len(recipes), 2*len(recipes[0]), len(recipes[0][0])))
-    print expanded_recipes.shape
-    for i,recipe in enumerate(recipes):
-        blank_line = [-1]*len(recipe[0])
-        print len(recipe)
-        expanped_recipe =  np.array([recipe[j//2] if j%2==0 else blank_line for j in xrange(2*len(recipe))])
-        print expanped_recipe.shape
-        expanded_recipes[i,:,:] = np.array([recipe[j//2] if j%2==0 else blank_line for j in xrange(2*len(recipe))])
-    #print recipes
-    print expanded_recipes.shape
-    sys.exit()
-    num_in_bucket = len(labels)
-    shuffle = range(num_in_bucket)
-    np.random.shuffle(shuffle)
-    labels = labels[shuffle]
-    refinements = refinements[shuffle]
-    recipes = recipes[shuffle]
-    return labels, refinements, recipes
+def _add_blanks_to_recipe(recipe):
+    #recipe in shape (num_phrases, num_words_per_phrase, batch_size)
+    #add a blank to each line except the last
+    expanded_recipe = np.zeros((2*recipe.shape[0] - 1, recipe.shape[1], recipe.shape[2]), dtype=np.int32)
+    expanded_recipe.fill(PAD_ID)
+    indices = range(recipe.shape[0]-1)
+    indices = [2*i for i in indices]
+    indices.append(indices[-1]+1)
+    expanded_recipe[indices,:,:] = recipe
+    return expanded_recipe
 
-def batch_iterator(word_to_id, pre_generation_batch_size, corpus, initial_buckets, all_buckets=False):
+def _index_to_ohe(indices, desired_size):
+    #indices is shape (batch_size,)
+    #output is shape (desired_size, batch_size)
+    output = np.zeros((desired_size, indices.shape[0]))
+    for batch,i in enumerate(indices):
+        output[i, batch] = 1
+    return output
+
+def batch_iterator(word_to_id, batch_size, corpus, initial_buckets, all_buckets=False):
+    #expand recipes to include blanks between each line
+
     #loops continuously over corpus
-    data,vocab,max_phrase_num,max_phrase_len, buckets= recipe_raw_data(word_to_id, initial_buckets, data_path = '.', corpus=corpus)
-    pre_generation_batch_size = 10
+    labels, refinements, recipes,vocab,max_phrase_num,max_phrase_len, buckets= recipe_raw_data(word_to_id, initial_buckets, corpus=corpus)
     start = True
     while True:
         if start:
             yield buckets
             start = False
-        recipes = recipe_iterator(data, pre_generation_batch_size, all_buckets=all_buckets)
-        for i,batch in enumerate(recipes):
+        processed = recipe_iterator(labels, refinements, recipes, batch_size, all_buckets=all_buckets)
+        for i,batch in enumerate(processed):
             if all_buckets:
-                data = batch
-                labeled_data = {}
-                for bucket_id,bucket in enumerate(buckets):
-                    labels, refinements, recipes = generate_labeled_batch(data[bucket])
-                    labeled_data[bucket_id] = (labels, refinements, recipes)
-                yield labeled_data
+                labels, refinements, recipes = batch
+                for bucket in refinements:
+                    refinements[bucket] = np.rollaxis(refinements[bucket], 1,0)
+                    recipes[bucket] = _add_blanks_to_recipe(np.rollaxis(np.rollaxis(recipes[bucket],1,0),2,1))
+                    labels[bucket] = _index_to_ohe(labels[bucket], recipes[bucket].shape[0])
+                yield labels, refinements, recipes
             else:
-                bucket, data = batch
+                bucket, labels, refinements, recipes= batch
                 bucket_id = buckets.index(bucket)
-                labels, refinements, recipes = generate_labeled_batch(data)
-                yield bucket_id, labels, refinements, recipes
+                #change dimensions so batch is last
+                refinements = np.rollaxis(refinements, 1,0)
+                recipes = np.rollaxis(np.rollaxis(recipes,1,0),2,1)
+                recipes_with_blanks = _add_blanks_to_recipe(recipes)
+                labels  = _index_to_ohe(labels, recipes_with_blanks.shape[0])
+                yield bucket_id, labels, refinements, recipes_with_blanks
 
-word_to_id = build_vocab('./recipes_train.txt')
-buckets = [(10,15), (15,20), (20,25), (25,30), (30,35)]
-b = batch_iterator(word_to_id, 10,'train', buckets)
-b.next()
-print b.next()
+# word_to_id = build_vocab(TRAIN_CORPUS)
+# init_buckets = [(10,15), (15,20), (20,25), (25,30), (30,35)]
+
+# labels, refinements, recipes, vocabulary, max_phrase_num, max_phrase_len,buckets = recipe_raw_data(word_to_id, buckets, data_path='.', corpus='train')
+# print recipes[(15,20)][0:5]
+# print len(recipes[(15,20)])
+
+# b = batch_iterator(word_to_id, 10,'train', init_buckets, all_buckets=False)
+# b.next()
+# first_batch = b.next()
+# print 'label shape:', first_batch[1].shape
+# print 'refinement shape:', first_batch[2].shape
+# print 'recipe shape:', first_batch[3].shape
+
+
+# b = batch_iterator(word_to_id, 10,'train', init_buckets, all_buckets=True)
+# init_buckets.append((39,68))
+# b.next()
+# first_batch = b.next()
+# for bucket_id,bucket in enumerate(init_buckets):
+    # print bucket_id, bucket
+    # print 'label shape:', first_batch[0][bucket_id].shape
+    # print 'refinement shape:', first_batch[1][bucket_id].shape
+    # print 'recipe shape:', first_batch[2][bucket_id].shape
+
 # print batch_iterator(word_to_id, 10,'train').next()[0]
 #print batch_iterator(word_to_id, 10,'train', all_buckets=True).next().values()[4][0]

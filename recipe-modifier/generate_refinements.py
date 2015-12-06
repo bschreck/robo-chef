@@ -95,39 +95,37 @@ def get_modification(phrase):
 
 # Writes the modified recipe out to text file
 # Format: modified recipe, original phrase, phrase num
-def write_modified_recipe(recipe, path, phrase_num, modified_phrase):
-	phrase_count = 0
-	with open(path, 'a') as f:
-		orig_phrase = None
-		for step in recipe:
-			for phrase in pck_to_txt.generatePhrasesFromStep(step):
-				phrase_count += 1 # Check if we should replace here
-				if (phrase_count == phrase_num):
-					orig_phrase = phrase
-					phrase = modified_phrase
-				f.write(phrase + '\t')
-		f.write(orig_phrase + '\t')
-		f.write(str(phrase_num) + '\t')
-		f.write('\n')
-
+def write_modified_recipe(phrases, path, phrase_num, modified_phrase, removal):
+    with open(path, 'a') as f:
+        if not removal:
+            f.write(str(phrase_num) + '\t')
+        else:
+            f.write(str(-phrase_num) + '\t')
+        f.write(str(phrases[phrase_num-1]) + '\t')
+        for i,phrase in enumerate(phrases):
+            if removal and i == phrase_num-1:
+                continue
+            f.write(phrase + '\t')
+        f.write('\n')
 
 def generate(recipe, path):
     phrase_num = 0
     max_phrase_len = 0
+    phrases = []
+    modified_phrases = []
     for step in recipe:
         for phrase in pck_to_txt.generatePhrasesFromStep(step):
             phrase_num += 1
             phrase_len = len(phrase.split())
             if phrase_len > max_phrase_len:
                 max_phrase_len = phrase_len
+            phrases.append(phrase)
             modified_phrase = get_modification(phrase)
             if (modified_phrase):
-                print recipe
-                print modified_phrase
-                print phrase_num
-                sys.exit()
-                write_modified_recipe(recipe, path, phrase_num, modified_phrase)
-            else:
-                pass
+                modified_phrases.append((phrase_num, modified_phrase))
+    for phrase_i, mod in modified_phrases:
+        write_modified_recipe(phrases, path, phrase_i, mod, False)
+    for i,phrase in enumerate(phrases):
+        write_modified_recipe(phrases, path, i+1, '', True)
 
     return phrase_num, max_phrase_len

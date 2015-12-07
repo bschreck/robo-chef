@@ -18,7 +18,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Example / benchmark for building a PTB LSTM model.
+"""
 
 Trains the model described in:
 (Zaremba, et. al.) Recurrent Neural Network Regularization
@@ -71,6 +71,7 @@ import tensorflow.python.platform
 import numpy as np
 import tensorflow as tf
 
+from tensorflow.models.rnn import rnn
 from tensorflow.models.rnn import rnn_cell
 from tensorflow.models.rnn import seq2seq
 import reader
@@ -83,6 +84,7 @@ flags.DEFINE_string(
     "A type of model. Possible options are: small, medium, large.")
 flags.DEFINE_string("data_path", None, "data_path")
 flags.DEFINE_string("model_path", None, "model_path")
+flags.DEFINE_string('review_segments_path', None, 'review_segments_path')
 flags.DEFINE_boolean("train", True, "whether to train the model (or reuse pre-trained parameters)")
 
 FLAGS = flags.FLAGS
@@ -126,17 +128,7 @@ class LangModel(object):
     #
     # The alternative version of the code below is:
     #
-    from tensorflow.models.rnn import rnn
     outputs, states = rnn.rnn(cell, inputs, initial_state=self._initial_state)
-    # outputs = []
-    # states = []
-    # state = self._initial_state
-    # with tf.variable_scope("RNN"):
-    #   for time_step, input_ in enumerate(inputs):
-    #     if time_step > 0: tf.get_variable_scope().reuse_variables()
-    #     (cell_output, state) = cell(input_, state)
-    #     outputs.append(cell_output)
-    #     states.append(state)
 
     output = tf.reshape(tf.concat(1, outputs), [-1, size])
     logits = tf.nn.xw_plus_b(output,
@@ -200,7 +192,7 @@ class SmallConfig(object):
   num_steps = 20
   hidden_size = 200
   max_epoch = 4
-  max_max_epoch = 13
+  max_max_epoch = 4  # TODO: change back to 13
   keep_prob = 1.0
   lr_decay = 0.5
   batch_size = 20
@@ -208,8 +200,6 @@ class SmallConfig(object):
 
   def __init__(self, n=10000):
     self.vocab_size = n
-
-
 
 class MediumConfig(object):
   """Medium config."""
@@ -228,7 +218,6 @@ class MediumConfig(object):
 
   def __init__(self, n=10000):
     self.vocab_size = n
-
 
 class LargeConfig(object):
   """Large config."""
@@ -273,30 +262,21 @@ def run_epoch(session, m, data, eval_op, verbose=False):
   return np.exp(costs / iters)
 
 
-def get_config(vocab_size):
-  if FLAGS.model == "small":
+def get_config(vocab_size, model_size):
+  if model_size == "small":
     return SmallConfig(vocab_size)
-  elif FLAGS.model == "medium":
+  elif model_size == "medium":
     return MediumConfig(vocab_size)
-  elif FLAGS.model == "large":
+  elif model_size == "large":
     return LargeConfig(vocab_size)
   else:
-    raise ValueError("Invalid model: %s", FLAGS.model)
+    raise ValueError("Invalid model: %s", model_size)
 
+def train_model(data_path, model_path, model_size):
+  raw_data = reader.get_raw_training_data(data_path)
+  train_data, valid_data, vocab_size, word_to_id = raw_data
 
-def main(unused_args):
-  if not FLAGS.data_path:
-    raise ValueError("Must set --data_path to PTB data directory")
-  if not FLAGS.model_path:
-    raise ValueError("Must set --model_path to an output directory")
-
-  raw_data = reader.get_raw_data(FLAGS.data_path)
-  train_data, valid_data, test_data, vocab_size = raw_data
-
-  config = get_config(vocab_size)
-  eval_config = get_config(vocab_size)
-  eval_config.batch_size = 1
-  eval_config.num_steps = 1
+  config = get_config(vocab_size, model_size)
 
   with tf.Graph().as_default(), tf.Session() as session:
     initializer = tf.random_uniform_initializer(-config.init_scale,
@@ -305,36 +285,79 @@ def main(unused_args):
       m = LangModel(is_training=True, config=config)
     with tf.variable_scope("model", reuse=True, initializer=initializer):
       mvalid = LangModel(is_training=False, config=config)
-      mtest = LangModel(is_training=False, config=eval_config)
 
     tf.initialize_all_variables().run()
 
     # Add ops to save and restore all the variables.
     saver = tf.train.Saver()
 
-    if FLAGS.train:
-      for i in range(config.max_max_epoch):
-        lr_decay = config.lr_decay ** max(i - config.max_epoch, 0.0)
-        m.assign_lr(session, config.learning_rate * lr_decay)
+    for i in range(config.max_max_epoch):
+      lr_decay = config.lr_decay ** max(i - config.max_epoch, 0.0)
+      m.assign_lr(session, config.learning_rate * lr_decay)
 
-        print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
-        train_perplexity = run_epoch(session, m, train_data, m.train_op,
-                                     verbose=True)
-        print("Epoch: %d Train Perplexity: %.3f" % (i + 1, train_perplexity))
-        valid_perplexity = run_epoch(session, mvalid, valid_data, tf.no_op())
-        print("Epoch: %d Valid Perplexity: %.3f" % (i + 1, valid_perplexity))
+      print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
+      train_perplexity = run_epoch(session, m, train_data, m.train_op,
+                                   verbose=True)
+      print("Epoch: %d Train Perplexity: %.3f" % (i + 1, train_perplexity))
+      valid_perplexity = run_epoch(session, mvalid, valid_data, tf.no_op())
+      print("Epoch: %d Valid Perplexity: %.3f" % (i + 1, valid_perplexity))
 
-      # Save the variables to disk.
-      save_path = saver.save(session, FLAGS.model_path)
-      print("Model saved in file: {0}".format(save_path))
-    
-    else:
-      # Restore variables from disk.
-      saver.restore(session, FLAGS.model_path)
-      print("Model restored from saved parameters at {0}".format(FLAGS.model_path))
+    # Save the variables to disk.
+    save_path = saver.save(session, model_path)
+    print("Model saved in file: {0}".format(save_path))
 
-    test_perplexity = run_epoch(session, mtest, test_data, tf.no_op())
-    print("Test Perplexity: %.3f" % test_perplexity)
+def scoreData(review_segments, data_path, model_path, model_size):
+  raw_data = reader.get_raw_training_data(data_path)
+  train_data, valid_data, vocab_size, word_to_id = raw_data
+
+  segments_data = reader.process_review_segments(review_segments, word_to_id)
+  segments_scores = []
+
+  eval_config = get_config(vocab_size, model_size)
+  eval_config.batch_size = 1
+  eval_config.num_steps = 1
+
+  with tf.Graph().as_default(), tf.Session() as session:
+    initializer = tf.random_uniform_initializer(-eval_config.init_scale,
+                                                eval_config.init_scale)
+    with tf.variable_scope("model", initializer=initializer):
+      model = LangModel(is_training=False, config=eval_config)
+
+    tf.initialize_all_variables().run()
+
+    # Add ops to save and restore all the variables.
+    saver = tf.train.Saver()
+
+    # Restore variables from disk.
+    saver.restore(session, model_path)
+    print("Model restored from saved parameters at {0}".format(model_path))
+
+
+    # Score the review segments
+    for segment in segments_data:
+      loglikelihood = np.log(run_epoch(session, model, segment, tf.no_op()))
+      segments_scores.append(loglikelihood)
+      print("Test Avg Loglikelihood: %.3f" % loglikelihood)
+
+  return segments_scores
+
+
+def main(unused_args):
+  if not FLAGS.data_path:
+    raise ValueError("Must set --data_path to PTB data directory")
+  if not FLAGS.model_path:
+    raise ValueError("Must set --model_path to an output directory")
+
+  if FLAGS.train:
+    print('==> Training model')
+    train_model(FLAGS.data_path, FLAGS.model_path, FLAGS.model)
+
+
+  if FLAGS.review_segments_path is not None:
+    print('==> Evaluating model on review segments')
+    with tensorflow.python.platform.gfile.GFile(FLAGS.review_segments_path, "r") as f:
+      review_segments = f.readlines()
+      scoreData(review_segments, FLAGS.data_path, FLAGS.model_path, FLAGS.model)
 
 
 if __name__ == "__main__":

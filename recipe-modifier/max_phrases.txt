@@ -1,0 +1,2 @@
+max_phrase_num 39
+max_phrase_len 68

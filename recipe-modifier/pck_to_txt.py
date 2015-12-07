@@ -6,6 +6,7 @@
 import cPickle as pickle
 import os
 import numpy as np
+import generate_refinements
 
 def readPickleFile(path):
     with open(path,'rb') as f:
@@ -34,6 +35,10 @@ def writeRecipeToTxtFile(recipe, path):
                 f.write(phrase+'\t')
         f.write('\n')
     return phrase_num, max_phrase_len
+
+
+def writeRecipeWithModsToTxtFile(recipe, path):
+    return generate_refinements.generate(recipe, path)
 
 def readAllPickleFilesFromDirectory(directory):
     files = [os.path.join(directory,f) for f in os.listdir(directory) if (
@@ -65,7 +70,11 @@ def writeAllRecipes(saved_directory, train_file_path, valid_file_path, test_file
     max_phrase_len = 0
     for i,recipe in enumerate(readAllPickleFilesFromDirectory(saved_directory)):
         txt_file_path = chooseCorpus(train_file_path, valid_file_path, test_file_path, split)
-        phrase_num, phrase_len = writeRecipeToTxtFile(recipe, txt_file_path)
+        if (txt_file_path==test_file_path):
+            continue
+            phrase_num, phrase_len = writeRecipeToTxtFile(recipe, txt_file_path)
+        else:
+            phrase_num, phrase_len = writeRecipeWithModsToTxtFile(recipe, txt_file_path)
         if phrase_num > max_phrase_num:
             max_phrase_num = phrase_num
         if phrase_len > max_phrase_len:
@@ -77,8 +86,9 @@ def writeAllRecipes(saved_directory, train_file_path, valid_file_path, test_file
 
 if __name__ == '__main__':
     saved_directory = '../scraper/pickle_files/all_recipes'
-    train_file_path = 'recipes_train.txt'
-    valid_file_path = 'recipes_valid.txt'
+
+    train_file_path = 'recipes_train2.txt'
+    valid_file_path = 'recipes_valid2.txt'
     test_file_path = 'recipes_test.txt'
     max_phrase_path = 'max_phrases.txt'
     split = (0.8,0.1)

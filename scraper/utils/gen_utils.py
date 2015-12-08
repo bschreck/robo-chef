@@ -6,7 +6,7 @@ def updatePickleFile(object2save,pf):
     #copy old pickle file contents to temporary file
     #save object to pickle file,
     #delete the temporary file
-    temp_pf = 'pickle_files/temp.p'
+    temp_pf = "pickle_files/temp%d.p" % os.getpid()
     if not os.path.isfile(pf):
         f = open(pf, 'w+')
         f.close()

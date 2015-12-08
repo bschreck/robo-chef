@@ -31,6 +31,7 @@ class RecipeWebsiteScraper(object):
             if self.page_in_file > self.pages_per_pickle:
                 self.newPickleFile()
             current_page_url = self.formUrl(self.browse_href + page_arguments % self.page)
+            print current_page_url
             statusCode = self.scrapePage(current_page_url)
             sys.stdout.flush()
             gen_utils.updatePickleFile([self.page, self.page_in_file, self.recipes],self.pickle_file)
@@ -51,8 +52,6 @@ class RecipeWebsiteScraper(object):
     def loadRecipes(self):
         self.pickle_file = os.path.join(self.save_directory, "latest.p")
         savedInfo = gen_utils.loadObjectFromPickleFile(self.pickle_file)
-
-        self.page, self.page_in_file, self.recipes = savedInfo
 
         if savedInfo:
             self.page, self.page_in_file, self.recipes = savedInfo
@@ -280,6 +279,107 @@ class AllRecipesScraper(RecipeWebsiteScraper):
 
 
             self.recipes[url] = {'metadata': metadata, 'instructions': instructions, 'notes': notes, 'footnotes': footnotes, 'reviews': reviews}
+
+class FoodDotComScraper(RecipeWebsiteScraper):
+    def __init__(self, save_directory):
+        super(FoodDotComScraper,self).__init__('http://food.com',
+                                                '/recipe/',
+                                                save_directory)
+        self.loadRecipes()
+        self.max_review_pages = 15
+    def scrape(self, num_pages=None):
+        super(FoodDotComScraper,self).scrape(page_arguments="?pn=%s", num_pages = num_pages)
+
+    def scrapePage(self,url):
+        page = web.getPage(url)
+        if not page:
+            return 0
+        elif not page.text or page.status_code != 200:
+            return page.status_code
+        parsed = BeautifulSoup(page.text)
+        for div in parsed.findAll('div'):
+            if 'class' in div.attrs and 'fd-content' in div['class']:
+                print 'fd-content'
+                for sdiv in div.findAll('div'):
+                    print 'fd-recipe'
+                    print sdiv
+                    for a in sdiv.findAll('a'):
+                        print a['href']
+                        if 'recipe' in a['href']:
+                            url = a['href']
+                            print 'url'
+                            if url not in self.recipes:
+                                print url
+                            #self.scrapeRecipePage(url)
+        return page.status_code
+
+    def scrapeRecipePage(self,url):
+        page = web.getPage(url)
+        if not page:
+            print "no page:", url
+            return
+        elif not page.text or page.status_code != 200:
+            return
+        else:
+            print "success:", url
+            parsed = BeautifulSoup(page.text)
+            metadata = {}
+            instructions = []
+            notes = []
+            footnotes = []
+            for article in parsed.findAll('article'):
+                if 'data-page-name' in article.attrs:
+                    for div in article.findAll('div'):
+                        if 'class' in div.attrs and 'recipe-detail' in div['class']:
+                            for sdiv in div.findAll('div'):
+                                if 'class' in div.attrs and 'directions' in div['class']:
+                                    for ol in div.findAll('ol'):
+                                        if 'itemprop' in ol.attrs and 'recipeInstructions' in ol['itemprop']:
+                                            for li in ol.findAll('li'):
+                                                instructions.append(li.text)
+                                            break
+                                    break
+
+                            break
+                    break
+            review_url = url + '/review'
+            review_page = web.getPage(review_url)
+            reviews = []
+            if not review_page or not review_page.text or review_page.status_code != 200:
+                self.recipes[url] = {'instructions': instructions, 'reviews': reviews}
+                return
+            else:
+                total_number_of_reviews_index = review_page.text.find('totalReviews = ')
+                total_number_of_reviews = review_page.text[total_number_of_reviews_index+1: total_number_of_reviews_index+4]
+                try:
+                    int(total_number_of_reviews)
+                except:
+                    try:
+                        int(total_number_of_reviews[:-1])
+                    except:
+                        try:
+                            total_number_of_reviews = int(total_number_of_reviews[:-2])
+                        except:
+                            total_number_of_reviews = 25
+                num_pages = total_number_of_reviews/25
+                pages_to_check = min(num_pages, self.max_review_pages)
+            print 'num_pages:', num_pages
+            for page in xrange(2, pages_to_check+1):
+                parsed = BeautifulSoup(review_page.text)
+                for section in parsed.findAll('section'):
+                    if 'class' in section.attrs and 'reviews' in section['class']:
+                        for article in section.findAll('article'):
+                            review_text = article.p.text
+                            if review_text:
+                                reviews.append(review_text)
+                        break
+                if page < pages_to_check:
+                    review_page = web.getPage(review_url+'?pn=%d'%page)
+            self.recipes[url] = {'instructions': instructions, 'reviews': reviews}
+            print self.recipes
+            sys.exit()
+
 if __name__ == '__main__':
     scraper = AllRecipesScraper('pickle_files/all_recipes')
+    scraper = FoodDotComScraper('pickle_files/food_dot_com')
     scraper.scrape()

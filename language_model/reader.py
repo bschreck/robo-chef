@@ -51,17 +51,17 @@ def _build_vocab(filename):
   count_pairs = sorted(counter.items(), key=lambda x: -x[1])
 
   words, _ = list(zip(*count_pairs))
-  word_to_id = dict(zip(words, range(len(words))))
+  word_to_id = dict(zip(words, range(1,len(words)+1)))
 
   return word_to_id
 
 
 def _file_to_word_ids(filename, word_to_id):
   data = _read_words(filename)
-  return [word_to_id[word] for word in data]
+  return [word_to_id.get(word, 0) for word in data]
 
 
-def get_raw_data(data_path=None):
+def get_raw_training_data(data_path=None):
   """Load raw data from data directory "data_path".
 
   Reads PTB-style text files, converts strings to integer ids,
@@ -71,19 +71,27 @@ def get_raw_data(data_path=None):
     data_path: string path to the directory where the data files exist.
 
   Returns:
-    tuple (train_data, valid_data, test_data, vocabulary).
+    tuple (train_data, valid_data, vocabulary_size, word_to_id).
   """
 
   train_path = os.path.join(data_path, "lm.train.txt")
   valid_path = os.path.join(data_path, "lm.valid.txt")
-  test_path = os.path.join(data_path, "lm.test.txt")
+  # test_path = os.path.join(data_path, "lm.test.txt")
 
   word_to_id = _build_vocab(train_path)
   train_data = _file_to_word_ids(train_path, word_to_id)
   valid_data = _file_to_word_ids(valid_path, word_to_id)
-  test_data = _file_to_word_ids(test_path, word_to_id)
-  vocabulary = len(word_to_id)
-  return train_data, valid_data, test_data, vocabulary
+  # test_data = _file_to_word_ids(test_path, word_to_id)
+  vocabulary_size = len(word_to_id) + 1
+  return train_data, valid_data, vocabulary_size, word_to_id
+
+def process_review_segments(review_segments, word_to_id):
+  segments_data = []
+  for segment in review_segments:
+    seg_data = [word_to_id.get(word, 0) for word in segment.replace("\n", "<eos>").split()]
+    segments_data.append(seg_data)
+
+  return segments_data
 
 def data_iterator(raw_data, batch_size, num_steps):
   """Iterate on the raw PTB-style data.
@@ -92,7 +100,7 @@ def data_iterator(raw_data, batch_size, num_steps):
   minibatch iteration along these pointers.
 
   Args:
-    raw_data: one of the raw data outputs from get_raw_data.
+    raw_data: one of the raw data outputs from get_raw_training_data.
     batch_size: int, the batch size.
     num_steps: int, the number of unrolls.
 

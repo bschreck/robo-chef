@@ -3,7 +3,7 @@ import random
 import os
 
 
-UNK_THRESHOLD = 15
+UNK_THRESHOLD = 25
 
 def extractRecipeInstructionsFromPickleFile(filename):
 	f = open(filename)
@@ -17,7 +17,7 @@ def extractRecipeInstructionsFromPickleFile(filename):
 	return instruction_steps
 
 def chunkStep(step):
-	return [chunk.strip().lower() for chunk in step.split('.') if chunk not in ['',' '] ]
+	return [chunk.strip().lower() for chunk in step.replace(';','.').split('.') if chunk not in ['',' '] ]
 
 def generateLanguageModelData(pickle_files_directory, outfile):
 	files = [os.path.join(pickle_files_directory,f) for f in os.listdir(pickle_files_directory) if ( \
@@ -33,7 +33,7 @@ def generateLanguageModelData(pickle_files_directory, outfile):
 		for chunk in chunks:
 			segments.append( ' ' + chunk + ' \n' ) # pad segment
 
-	segments = subWithUnkown(processesPuntuation(segments))
+	segments = symbolicSubstitutions(processesPuntuation(segments))
 
 	out = open(outfile, 'w')
 	out.writelines(segments)
@@ -42,10 +42,10 @@ def generateLanguageModelData(pickle_files_directory, outfile):
 def processesPuntuation(segments):
 	new_segments = []
 	for s in segments:
-		new_segments.append( s.replace("n't"," n't").replace(',', ' ,').replace(';', ' ;').replace('/', ' / ').replace('(', '( ').replace(')', ' )') )
+		new_segments.append( s.replace("n't"," n't").replace("'ve"," 've").replace(',', ' ,').replace('/', ' / ').replace('(', '( ').replace(')', ' )') )
 	return new_segments
 
-def subWithUnkown(segments):
+def symbolicSubstitutions(segments):
 	tokens = {}
 	for seg in segments:
 		for t in seg.split(' '):
@@ -54,7 +54,9 @@ def subWithUnkown(segments):
 	for seg in segments:
 		new_seg = []
 		for t in seg.split(' '):
-			if tokens[t] > UNK_THRESHOLD:
+			if t.isdigit():
+				new_seg.append('<num>')
+			elif tokens[t] > UNK_THRESHOLD:
 				new_seg.append(t)
 			else:
 				new_seg.append('<unk>')
@@ -94,5 +96,8 @@ def countWords(data):
 
 
 
+#######################   PREP DATA   #######################
+# generateLanguageModelData('../data/all_recipes/', '../data/lm_data.txt')
+# splitData('../data/lm_data.txt', 0.05, '../data/lm.train.txt', '../data/lm.valid.txt')
 
 

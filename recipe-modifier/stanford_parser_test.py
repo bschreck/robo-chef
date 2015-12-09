@@ -45,6 +45,12 @@ def is_break_symbol(word):
 		return True
 	return False
 
+def is_recipe_break_symbol(word):
+    recipe_break_symbols = ['<RECIPE_BREAK>', '<RECIPE_TITLE_BREAK>', '<RECIPE_TEXT_BREAK>', '<RECIPE_REVIEW_BREAK>']
+    if any(recipe_break in word.data for recipe_break in recipe_break_symbols):
+        return True
+    return False
+
 def splitParserOutput(parser_out):
     current_recipe_name = []
     current_recipe_text = []
@@ -91,11 +97,8 @@ def parse(txt_file, output_file):
 def parseParagraph(paragraph):
     bracketed_parse = " ".join( [i.strip() for i in paragraph if len(i.strip()) > 0 and i.strip()[0] == "("])
 
-    #print bracketed_parse
-
     # Split the parse into an array
     split =  re.split('(\W)', bracketed_parse)
-    #print split
 
     # We will store the leaf nodes here in the correct order
     node_list = []
@@ -130,21 +133,25 @@ def parseParagraph(paragraph):
     current_segment = []
     for i in range(len(node_list)):
         word= node_list[i]
-        current_segment.append(word.data)
-        #print "word data: " + word.data
+
+        # Check for special recipe break symbols -- Output each as a standalone segment.
+        if (is_recipe_break_symbol(word)):
+            all_segments.append(current_segment)
+            all_segments.append([word.data])
+            current_segment = []
+
+        else:
+            current_segment.append(word.data)
 
         # Hack to get the spacing correct before punctuation
         if (is_break_symbol(word) or is_comma_condition(word)):
             joined_str = ' '.join(current_segment[:-1])
-            #print joined_str + current_segment[-1]
             all_segments.append(joined_str+ current_segment[-1])
             current_segment = []
         if (is_coordinating_conjunction(word)): #sentence break
-            #print ' '.join(current_segment)
             all_segments.append(' '.join(current_segment))
             current_segment = []
     if len(' '.join(current_segment))>0:
         all_segments.append(' '.join(current_segment))
-        #print ' '.join(current_segment)
-    #print all_segments
     return all_segments
+

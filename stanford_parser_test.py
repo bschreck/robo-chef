@@ -31,13 +31,14 @@ def is_tag(symbol):
 # Define segments according to rules
 def is_coordinating_conjunction(word):
 	if (word.parent.data == "CC"):
-		if (word.parent.parent and word.parent.parent.data not in ["NP, PP, ADJP"]):
+		if (word.parent.parent and word.parent.parent.data not in ["NP", "PP", "ADJP"]):
 			return True
 	return False
 
 def is_comma_condition(word):
-	if (word.data=="," and word.parent.parent and word.parent.parent.data not in ["NP, PP, ADJP"]):
-		return True
+	if (word.data=="," and word.parent.parent):
+		if (word.parent.parent.data not in ["NP", "PP", "ADJP"]):
+			return True
 
 def is_break_symbol(word):
 	if (word.data in [".", ":", ";", "!"]):
@@ -49,7 +50,7 @@ def parse(sentence):
 	sentence = sentence.replace("'", "*")
 	os.popen("echo '"+sentence+"' > ~/stanfordtemp.txt")
 	parser_out = os.popen("~/stanford-parser-2012-11-12/lexparser.sh ~/stanfordtemp.txt").readlines()
-	bracketed_parse = " ".join( [i.strip() for i in parser_out if len(i.strip()) > 0 and i.strip()[0] == "("])
+	#bracketed_parse = " ".join( [i.strip() for i in parser_out if len(i.strip()) > 0 and i.strip()[0] == "("])
 
 	print bracketed_parse
 

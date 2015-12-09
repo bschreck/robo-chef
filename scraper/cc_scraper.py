@@ -24,7 +24,7 @@ class Process:
         self.start = datetime.datetime.now()
 
         self.workers = []
-        directory = 'cdx-index-client/allrecipes_index2'
+        directory = 'cdx-index-client/allrecipes_index_15_14'
         paths = []
         for path in os.listdir(directory):
             paths.append(os.path.join(directory, path))

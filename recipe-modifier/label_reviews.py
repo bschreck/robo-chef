@@ -3,16 +3,11 @@ import stanford_parser_test as stan
 import cPickle as pickle
 import os
 
-def loadRecipes(directory):
-    files = [os.path.join(directory,f) for f in os.listdir(directory) if (
-                                    os.path.isfile(os.path.join(directory,f)) and
-                                    os.path.join(directory,f).endswith('.p'))]
-    for path in files:
-        with open(path,'rb') as f:
-            _,_,recipes = pickle.load(f)
-        labeled_file = 'labels_'+path
-        labeler(recipes, labeled_file)
-        break
+def loadRecipes(all_recipes_file):
+    with open(all_recipes_file,'rb') as f:
+        recipes = pickle.load(f)
+    labeled_file = 'labels.p'
+    labeler(recipes, labeled_file)
 
 def parseReviewPhrases(reviews):
     phrases = [p for r in reviews
@@ -24,30 +19,56 @@ def parseRecipePhrases(recipe):
     return phrases
 
 def labeler(recipes, labeled_file):
-    labeled_recipes = recipes
-    for recipe in recipes:
-        reviews = parseReviewPhrases([r['text'] for r in recipes[recipe]['reviews']])
+    labeled_recipes = {}
+    for r_i, recipe in enumerate(recipes):
+        if recipe in labeled_recipes:
+            continue
+        reviews = []
+        for review in recipes[recipe]['reviews']:
+            try:
+                reviews.append(r['text'])
+            except:
+                reviews.append(review)
+        reviews = parseReviewPhrases(reviews)
         recipe_text = parseRecipePhrases(recipes[recipe]['instructions'])
-        labeled_recipes[recipe]["labels"] = {}
+        current_label = {}
         review_index = 0
-        for reviews in recipes[recipe]['reviews']:
-            print reviews
-            labeled_recipes[recipe]["labels"][review_index] = {}
-            for i in range(len(reviews)):
-                print i,".", reviews[i]
-                check_refinement = str(raw_input("Refinement in review? "))
-                if check_refinement == "y":
-                    print "Refinement: ", reviews[i].upper()
-                    for j in range(len(recipes[recipe]['instructions'])):
-                        print j, ".", recipes[recipe]['instructions'][j]
-                    indexing = str(raw_input("Line + Modification or insertion? "))
-                    labeled_recipes[recipe]["labels"][review_index][i] = indexing
-                else:
-                    labeled_recipes[recipe]["labels"][review_index][i] = None
-
+        for i,review in enumerate(reviews):
+            current_label[review_index] = {}
+            print "Review %d."%i, review
+            check_refinement = str(raw_input("Refinement in review? "))
+            if check_refinement == "y":
+                print "Refinement: ", reviews[i].upper()
+                for j,step in enumerate(recipe_text):
+                    print j, ".", step
+                while True:
+                    indexing = str(raw_input("Line + Modification or Insertion? "))
+                    if indexing.startswith('q'):
+                        labeled_recipes[recipe] = current_label
+                        pickle.dump( labeled_recipes, open( labeled_file, "wb" ) )
+                        sys.exit()
+                    else:
+                        try:
+                            indexing = int(indexing)
+                        except:
+                            print 'Enter an integer'
+                        else:
+                            if indexing < len(recipe_text):
+                                current_label[review_index][i] = int(indexing)
+                                break
+                            else:
+                                print 'Integer must be less than length of recipe steps'
+            elif check_refinement.startswith('q'):
+                labeled_recipes[recipe] = current_label
                 pickle.dump( labeled_recipes, open( labeled_file, "wb" ) )
+                sys.exit()
+            else:
+                current_label[review_index][i] = None
+        labeled_recipes[recipe] = current_label
+        review_index += 1
 
-            review_index += 1
+        if r_i%10 == 0:
+            pickle.dump( labeled_recipes, open( labeled_file, "wb" ) )
 
     return labeled_recipes
 
@@ -72,7 +93,7 @@ def labeler(recipes, labeled_file):
 
 
 if __name__ == '__main__':
-    saved_directory = '../scraper/pickle_files/all_recipes'
+    saved_directory = '../scraper/pickle_files/full_dataset.p'
     loadRecipes(saved_directory)
 	# recipes = {
         # 'Chicken Soup': {

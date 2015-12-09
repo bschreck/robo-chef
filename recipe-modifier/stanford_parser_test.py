@@ -45,66 +45,84 @@ def is_break_symbol(word):
 		return True
 	return False
 
-def parse(sentence):
-	sentence = sentence.replace("'", "*")
-	os.popen("echo '"+sentence+"' > ../stanfordtemp.txt")
-	parser_out = os.popen("../stanford-parser-2012-11-12/lexparser.sh ../stanfordtemp.txt").readlines()
+def splitParserOutput(parser_out):
+    by_recipe = parser_out.split('<RECIPE_BREAK>')
+    for recipe in by_recipe:
+        recipe_name, other = recipe.split('<RECIPE_TITLE_BREAK>')
+        recipe_text, other = other.split('<RECIPE_TEXT_BREAK>')
+        reviews = other.split('REVIPE_REVIEW_BREAK')
+        yield recipe_name, recipe_text, reviews
+def parse(txt_file, output_file):
+    parser_out = os.popen("../stanford-parser-2012-11-12/lexparser.sh %s" % txt_file).readlines()
+    parsed = {}
+    i = 0
+    for recipe_name, recipe_text, reviews in splitParserOutput(parser_out):
+        parsed[recipe_name] = {'instructions':parseParagraph(recipe_text),
+                                'reviews':[]}
+        for review in reviews:
+            parsed[recipe_name]['reviews'].append(parseParagraph(review))
+        if i%100 == 0:
+            with open(output_file, 'wb') as f:
+                pickle.dump(parsed, f)
+        i+=1
 
-	bracketed_parse = " ".join( [i.strip() for i in parser_out if len(i.strip()) > 0 and i.strip()[0] == "("])
+def parseParagraph(paragraph):
+    bracketed_parse = " ".join( [i.strip() for i in paragraph if len(i.strip()) > 0 and i.strip()[0] == "("])
 
-	#print bracketed_parse
+    #print bracketed_parse
 
-	# Split the parse into an array
-	split =  re.split('(\W)', bracketed_parse)
-	#print split
+    # Split the parse into an array
+    split =  re.split('(\W)', bracketed_parse)
+    #print split
 
-	# We will store the leaf nodes here in the correct order
-	node_list = []
-	current_parent = None
-	current_node = None
-	root = None
-	last_symbol = None # Store the last symbol we've seen to identify the leaf nodes
+    # We will store the leaf nodes here in the correct order
+    node_list = []
+    current_parent = None
+    current_node = None
+    root = None
+    last_symbol = None # Store the last symbol we've seen to identify the leaf nodes
 
-	# Go through the array and build the tree
-	# The leaf node's type is stored as its PARENT
-	for symbol in split:
-		if (str(symbol).isspace() or str(symbol)==""):
-			pass
-		else:
-			if (symbol=="("):
-				if (last_symbol!=")"):
-					current_parent = current_node
-			elif (symbol==")"):
-				current_parent = current_parent.parent
-			elif (is_tag(last_symbol)): # Leaf node case
-				current_parent = current_node
-				child = add_child(node_list, current_parent, symbol, True)
-				current_node = child
-			else:
-				child = add_child(node_list, current_parent, symbol, False)
-				current_node = child
-			last_symbol = symbol
+    # Go through the array and build the tree
+    # The leaf node's type is stored as its PARENT
+    for symbol in split:
+        if (str(symbol).isspace() or str(symbol)==""):
+            pass
+        else:
+            if (symbol=="("):
+                if (last_symbol!=")"):
+                    current_parent = current_node
+            elif (symbol==")"):
+                current_parent = current_parent.parent
+            elif (is_tag(last_symbol)): # Leaf node case
+                current_parent = current_node
+                child = add_child(node_list, current_parent, symbol, True)
+                current_node = child
+            else:
+                child = add_child(node_list, current_parent, symbol, False)
+                current_node = child
+            last_symbol = symbol
 
-	# Now just segment based on the rules and print the segments
-	all_segments = []
+    # Now just segment based on the rules and print the segments
+    all_segments = []
 
-	current_segment = []
-	for i in range(len(node_list)):
-		word= node_list[i]
-		current_segment.append(word.data)
-		#print "word data: " + word.data
+    current_segment = []
+    for i in range(len(node_list)):
+        word= node_list[i]
+        current_segment.append(word.data)
+        #print "word data: " + word.data
 
-		# Hack to get the spacing correct before punctuation
-		if (is_break_symbol(word) or is_comma_condition(word)):
-			joined_str = ' '.join(current_segment[:-1])
-			#print joined_str + current_segment[-1]
-			all_segments.append(joined_str+ current_segment[-1])
-			current_segment = []
-		if (is_coordinating_conjunction(word)): #sentence break
-			#print ' '.join(current_segment)
-			all_segments.append(' '.join(current_segment))
-			current_segment = []
-	if len(' '.join(current_segment))>0:
-		all_segments.append(' '.join(current_segment))
-		#print ' '.join(current_segment)
-	#print all_segments
+        # Hack to get the spacing correct before punctuation
+        if (is_break_symbol(word) or is_comma_condition(word)):
+            joined_str = ' '.join(current_segment[:-1])
+            #print joined_str + current_segment[-1]
+            all_segments.append(joined_str+ current_segment[-1])
+            current_segment = []
+        if (is_coordinating_conjunction(word)): #sentence break
+            #print ' '.join(current_segment)
+            all_segments.append(' '.join(current_segment))
+            current_segment = []
+    if len(' '.join(current_segment))>0:
+        all_segments.append(' '.join(current_segment))
+        #print ' '.join(current_segment)
+    #print all_segments
+    return all_segments

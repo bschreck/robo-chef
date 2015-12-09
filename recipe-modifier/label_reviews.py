@@ -1,4 +1,5 @@
 import pck_to_txt
+import stanford_parser_test as stan
 import cPickle as pickle
 import os
 
@@ -14,12 +15,12 @@ def loadRecipes(directory):
         break
 
 def parseReviewPhrases(reviews):
-    phrases = [p for r in review
-                    for p in pck_to_txt.generatePhrasesFromStep(r)]
+    phrases = [p for r in reviews
+                    for p in stan.parse(r)]
     return phrases
 def parseRecipePhrases(recipe):
     phrases = [p for s in recipe
-                    for p in pck_to_txt.generatePhrasesFromStep(s)]
+                    for p in stan.parse(s)]
     return phrases
 
 def labeler(recipes, labeled_file):
@@ -71,7 +72,7 @@ def labeler(recipes, labeled_file):
 
 
 if __name__ == '__main__':
-    saved_directory = 'scraper/pickle_files/all_recipes'
+    saved_directory = '../scraper/pickle_files/all_recipes'
     loadRecipes(saved_directory)
 	# recipes = {
         # 'Chicken Soup': {

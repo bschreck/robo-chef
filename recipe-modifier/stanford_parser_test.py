@@ -16,14 +16,14 @@ def add_child(node_list, parent, symbol, leaf_status):
 			parent.left = child
 		else:
 			parent.right = child
-	else: 
+	else:
 		root = child
 	if (leaf_status):
 		node_list.append(child)
 	return child
 
 # return true if symbol is not a parenthesis or separator
-def is_tag(symbol): 
+def is_tag(symbol):
 	if (symbol in [")", "("] or str(symbol).isspace() or str(symbol)==""):
 		return False
 	return True
@@ -45,8 +45,8 @@ def is_break_symbol(word):
 	return False
 
 def parse(sentence):
-	os.popen("echo '"+sentence+"' > ~/stanfordtemp.txt")
-	parser_out = os.popen("~/stanford-parser-2012-11-12/lexparser.sh ~/stanfordtemp.txt").readlines()
+	os.popen("echo '"+sentence+"' > ../stanfordtemp.txt")
+	parser_out = os.popen("../stanford-parser-2012-11-12/lexparser.sh ../stanfordtemp.txt").readlines()
 	bracketed_parse = " ".join( [i.strip() for i in parser_out if len(i.strip()) > 0 and i.strip()[0] == "("])
 
 	#print bracketed_parse
@@ -68,7 +68,7 @@ def parse(sentence):
 			pass
 		else:
 			if (symbol=="("):
-				if (last_symbol!=")"):	
+				if (last_symbol!=")"):
 					current_parent = current_node
 			elif (symbol==")"):
 				current_parent = current_parent.parent

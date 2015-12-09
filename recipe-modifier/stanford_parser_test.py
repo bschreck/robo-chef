@@ -31,13 +31,14 @@ def is_tag(symbol):
 # Define segments according to rules
 def is_coordinating_conjunction(word):
 	if (word.parent.data == "CC"):
-		if (word.parent.parent and word.parent.parent.data not in ["NP, PP, ADJP"]):
+		if (word.parent.parent and word.parent.parent.data not in ["NP", "PP", "ADJP"]):
 			return True
 	return False
 
 def is_comma_condition(word):
-	if (word.data=="," and word.parent.parent and word.parent.parent.data not in ["NP, PP, ADJP"]):
-		return True
+	if (word.data=="," and word.parent.parent):
+		if (word.parent.parent.data not in ["NP", "PP", "ADJP"]):
+			return True
 
 def is_break_symbol(word):
 	if (word.data in [".", ":", ";", "!"]):
@@ -45,6 +46,7 @@ def is_break_symbol(word):
 	return False
 
 def parse(sentence):
+	sentence = sentence.replace("'", "*")
 	os.popen("echo '"+sentence+"' > ../stanfordtemp.txt")
 	parser_out = os.popen("../stanford-parser-2012-11-12/lexparser.sh ../stanfordtemp.txt").readlines()
 	bracketed_parse = " ".join( [i.strip() for i in parser_out if len(i.strip()) > 0 and i.strip()[0] == "("])
@@ -53,6 +55,7 @@ def parse(sentence):
 
 	# Split the parse into an array
 	split =  re.split('(\W)', bracketed_parse)
+	#print split
 
 	# We will store the leaf nodes here in the correct order
 	node_list = []
@@ -82,17 +85,25 @@ def parse(sentence):
 			last_symbol = symbol
 
 	# Now just segment based on the rules and print the segments
+	all_segments = []
+
 	current_segment = []
 	for i in range(len(node_list)):
 		word= node_list[i]
 		current_segment.append(word.data)
+		#print "word data: " + word.data
 
 		# Hack to get the spacing correct before punctuation
 		if (is_break_symbol(word) or is_comma_condition(word)):
 			joined_str = ' '.join(current_segment[:-1])
-			print joined_str + current_segment[-1]
+			#print joined_str + current_segment[-1]
+			all_segments.append(joined_str+ current_segment[-1])
 			current_segment = []
 		if (is_coordinating_conjunction(word)): #sentence break
-			print ' '.join(current_segment)
+			#print ' '.join(current_segment)
+			all_segments.append(' '.join(current_segment))
 			current_segment = []
-	print ' '.join(current_segment)
+	if len(' '.join(current_segment))>0:
+		all_segments.append(' '.join(current_segment))
+		#print ' '.join(current_segment)
+	#print all_segments

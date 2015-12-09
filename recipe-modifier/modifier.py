@@ -127,13 +127,13 @@ def train():
     while True:
       # Get a batch and make a step.
       start_time = time.time()
-      bucket_id, target_weights, encoder_inputs, decoder_inputs = train_set.next()
+      bucket_id, target_weights, refinement_segment, recipe_segments = train_set.next()
       print("got first batch")
       print("bucket_id:", bucket_id)
       print("target_weights:", target_weights.shape)
-      print("decoder_inputs:", decoder_inputs.shape)
+      print("recipe_segments:", recipe_segments.shape)
 
-      _, step_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
+      _, step_loss, _ = model.step(sess, refinement_segment, recipe_segments,
                                    target_weights, bucket_id, False)
       print("got first loss", step_loss)
       step_time += (time.time() - start_time) / FLAGS.steps_per_checkpoint
@@ -157,9 +157,9 @@ def train():
         model.saver.save(sess, checkpoint_path, global_step=model.global_step)
         step_time, loss = 0.0, 0.0
         # Run evals on development set and print their perplexity.
-        target_weights, encoder_inputs, decoder_inputs= dev_set.next()
+        target_weights, refinement_segment, recipe_segments = dev_set.next()
         for bucket_id in target_weights:
-          _, eval_loss, _ = model.step(sess, encoder_inputs[bucket_id], decoder_inputs[bucket_id],
+          _, eval_loss, _ = model.step(sess, refinement_segment[bucket_id], recipe_segments[bucket_id],
                                        target_weights[bucket_id], bucket_id, True)
           eval_ppx = math.exp(eval_loss) if eval_loss < 300 else float('inf')
           print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))

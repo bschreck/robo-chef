@@ -129,6 +129,7 @@ class RecipeNet(object):
                 self.updates.append(opt.apply_gradients(
                     zip(clipped_gradients, params), global_step=self.global_step))
         self.saver = tf.train.Saver(tf.all_variables())
+
     def step(self, session, encoder_inputs, decoder_inputs, target_weights,
              bucket_id, forward_only):
         """Run a step of the model feeding the given inputs.
@@ -206,15 +207,15 @@ class RecipeNet(object):
                     decoder_embedding_outputs.append(decoder_embedding_output)
                     decoder_embedding_states.append(decoder_embedding_state)
 
-
             #TODO: do this for encoder cell and each decoder embedding cell
             # # First calculate a concatenation of encoder outputs to put attention on.
             # top_states = [tf.reshape(e, [-1, 1, cell.output_size])
                           # for e in encoder_outputs]
             # attention_states = tf.concat(1, top_states)
 
+            return seq2seq.rnn_decoder([tf.concat(1, [d[-1], encoder_states[-1]]) for d in decoder_embedding_states], tf.zeros_like(encoder_states[-1]),output_cell)
+            # return seq2seq.rnn_decoder([d[-1] for d in decoder_embedding_states], encoder_states[-1],output_cell)
 
-            return seq2seq.rnn_decoder([d[-1] for d in decoder_embedding_states], encoder_states[-1],output_cell)
     def model_with_buckets(self, encoder_inputs, decoder_inputs, targets,
                    buckets, seq2seq_func,name=None):
             #encoder_inputs size= (phrase_len, batch_size)

@@ -6,30 +6,32 @@ import sys
 
 
 def parseRecipes(all_recipes_file):
-    with open(all_recipes_file,'rb') as f:
-        unparsed_recipes = pickle.load(f)
-
+    # with open(all_recipes_file,'rb') as f:
+        # unparsed_recipes = pickle.load(f)
+    parseRecipeProcess('tmp.txt', 'parsed.p')
+    return
     cpus = mp.cpu_count()
-    chunksize = len(unparsed_recipes)/cpus
+    #chunksize = len(unparsed_recipes)/cpus
     pool = mp.Pool(processes=cpus)
-    recipe_keys = unparsed_recipes.keys()
+    #recipe_keys = unparsed_recipes.keys()
     processes = []
     for cpu in xrange(cpus):
-        chunk = {}
-        if cpu < cpus-1:
-            recipe_key_chunk = recipe_keys[cpu*chunksize:(cpu+1)*chunksize]
-        else:
-            recipe_key_chunk = recipe_keys[cpu*chunksize:]
-        for key in recipe_key_chunk:
-            chunk[key] = unparsed_recipes[key]
+        # chunk = {}
+        # if cpu < cpus-1:
+            # recipe_key_chunk = recipe_keys[cpu*chunksize:(cpu+1)*chunksize]
+        # else:
+            # recipe_key_chunk = recipe_keys[cpu*chunksize:]
+        # for key in recipe_key_chunk:
+            # chunk[key] = unparsed_recipes[key]
         output_file = "parsed_%d.p"%cpu
         tmp_file = "tmp_%d.txt"%cpu
-        p = pool.apply_async(parseRecipeProcess, [chunk, output_file, tmp_file])
+        #p = pool.apply_async(toTxtFileProcess, [chunk, output_file, tmp_file])
+        p = pool.apply_async(parseRecipeProcess, [output_file, tmp_file])
         processes.append(p)
     [p.get() for p in processes]
 
-def toTxtFileProcess(unparsed_recipes, output_file, tmp_file):
-    with open(tmp_file, 'wb') as f:
+def toTxtFileProcess(unparsed_recipes, output_file, txt_file):
+    with open(txt_file, 'wb') as f:
         for i,recipe in enumerate(unparsed_recipes):
             try:
                 reviews = []
@@ -47,7 +49,6 @@ def toTxtFileProcess(unparsed_recipes, output_file, tmp_file):
                 f.write('\n<RECIPE_BREAK>\n')
             except:
                 continue
-    parseRecipeProcess(txt_file, output_file)
 
 def parseRecipeProcess(txt_file, output_file):
     stan.parse(txt_file, output_file)

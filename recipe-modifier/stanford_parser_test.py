@@ -46,12 +46,34 @@ def is_break_symbol(word):
 	return False
 
 def splitParserOutput(parser_out):
-    by_recipe = parser_out.split('<RECIPE_BREAK>')
-    for recipe in by_recipe:
-        recipe_name, other = recipe.split('<RECIPE_TITLE_BREAK>')
-        recipe_text, other = other.split('<RECIPE_TEXT_BREAK>')
-        reviews = other.split('REVIPE_REVIEW_BREAK')
-        yield recipe_name, recipe_text, reviews
+    current_recipe_name = []
+    current_recipe_text = []
+    current_recipe_reviews = [[]]
+    state = 'title'
+    for phrase in parser_out:
+        if '<RECIPE_BREAK>' in phrase:
+            yield current_recipe_name, current_recipe_text, current_recipe_reviews
+            state = 'title'
+            current_recipe_name = []
+            current_recipe_text = []
+            current_recipe_reviews = [[]]
+        elif '<RECIPE_TITLE_BREAK>' in phrase:
+            state = 'text'
+            current_recipe_name = ''.join(current_recipe_name)
+        elif '<RECIPE_TEXT_BREAK>' in phrase:
+            state = 'review'
+        elif '<RECIPE_REVIEW_BREAK>' in phrase:
+            current_recipe_reviews.append([])
+        else:
+            if state == 'title':
+                current_recipe_name.append(phrase)
+            elif state == 'text':
+                current_recipe_text.append(phrase)
+            elif state == 'review':
+                current_recipe_reviews[-1].append(phrase)
+            else:
+                raise ValueError, 'shouldnt get here'
+
 def parse(txt_file, output_file):
     parser_out = os.popen("../stanford-parser-2012-11-12/lexparser.sh %s" % txt_file).readlines()
     parsed = {}

@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 from __future__ import division
-from __future__ import print_function
+from __future__ import print(_function
 import random
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
@@ -213,6 +213,8 @@ class RecipeNet(object):
                           # for e in encoder_outputs]
             # attention_states = tf.concat(1, top_states)
 
+            print(tf.shape(decoder_embedding_states[0]))
+            print(tf.shape(encoder_states[-1]))
             return seq2seq.rnn_decoder([tf.concat(1, [d[-1], encoder_states[-1]]) for d in decoder_embedding_states], tf.zeros_like(encoder_states[-1]),output_cell)
             # return seq2seq.rnn_decoder([d[-1] for d in decoder_embedding_states], encoder_states[-1],output_cell)
 

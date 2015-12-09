@@ -136,8 +136,8 @@ def parseParagraph(paragraph):
 
         # Check for special recipe break symbols -- Output each as a standalone segment.
         if (is_recipe_break_symbol(word)):
-            all_segments.append(current_segment)
-            all_segments.append([word.data])
+            all_segments.append(' '.join(current_segment))
+            all_segments.append(word.data)
             current_segment = []
 
         else:

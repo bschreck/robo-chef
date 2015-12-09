@@ -50,9 +50,9 @@ def parse(sentence):
 	sentence = sentence.replace("'", "*")
 	os.popen("echo '"+sentence+"' > ~/stanfordtemp.txt")
 	parser_out = os.popen("~/stanford-parser-2012-11-12/lexparser.sh ~/stanfordtemp.txt").readlines()
-	#bracketed_parse = " ".join( [i.strip() for i in parser_out if len(i.strip()) > 0 and i.strip()[0] == "("])
+	bracketed_parse = " ".join( [i.strip() for i in parser_out if len(i.strip()) > 0 and i.strip()[0] == "("])
 
-	print bracketed_parse
+	#print bracketed_parse
 
 	# Split the parse into an array
 	split =  re.split('(\W)', bracketed_parse)

@@ -56,6 +56,7 @@ def parse(sentence):
 
 	# Split the parse into an array
 	split =  re.split('(\W)', bracketed_parse)
+	#print split
 
 	# We will store the leaf nodes here in the correct order
 	node_list = []
@@ -85,17 +86,25 @@ def parse(sentence):
 			last_symbol = symbol
 
 	# Now just segment based on the rules and print the segments
+	all_segments = []
+
 	current_segment = []
 	for i in range(len(node_list)):
 		word= node_list[i]
 		current_segment.append(word.data)
+		#print "word data: " + word.data
 
 		# Hack to get the spacing correct before punctuation
 		if (is_break_symbol(word) or is_comma_condition(word)):
 			joined_str = ' '.join(current_segment[:-1])
-			print joined_str + current_segment[-1]
+			#print joined_str + current_segment[-1]
+			all_segments.append(joined_str+ current_segment[-1])
 			current_segment = []
 		if (is_coordinating_conjunction(word)): #sentence break
-			print ' '.join(current_segment)
+			#print ' '.join(current_segment)
+			all_segments.append(' '.join(current_segment))
 			current_segment = []
-	print ' '.join(current_segment)
+	if len(' '.join(current_segment))>0:
+		all_segments.append(' '.join(current_segment))
+		#print ' '.join(current_segment)
+	#print all_segments

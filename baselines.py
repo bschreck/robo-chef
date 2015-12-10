@@ -149,7 +149,7 @@ def testBOW(test_file):
 	for d in mod_data:
 		predictions_m.append( findBestModificationIndexBOW(d[3], d[2], k=3) )
 
-	print('\nModifications')
+	print('\nModifications: {0} examples'.format(len(mod_data)))
 	printPredictionStats(predictions_m, mod_data)
 
 	in_data = [d for d in data if d[0] == 'insertion']
@@ -157,7 +157,7 @@ def testBOW(test_file):
 	for d in in_data:
 		predictions_i.append( findBestInsertionIndexBOW(d[3], d[2], k=3) )
 
-	print('\nInsertions')
+	print('\nInsertions: {0} examples'.format(len(in_data)))
 	printPredictionStats(predictions_i, in_data)
 
 	

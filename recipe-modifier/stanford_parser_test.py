@@ -1,5 +1,6 @@
 import os
 import re
+import cPickle as pickle
 
 class Node(object):
 	def __init__(self, data):
@@ -52,46 +53,73 @@ def splitParserOutput(parser_out):
     state = 'title'
     for phrase in parser_out:
         if '<RECIPE_BREAK>' in phrase:
+            #print '-->recipe break'
             yield current_recipe_name, current_recipe_text, current_recipe_reviews
             state = 'title'
             current_recipe_name = []
             current_recipe_text = []
             current_recipe_reviews = [[]]
         elif '<RECIPE_TITLE_BREAK>' in phrase:
+            #print '-->title break'
             state = 'text'
-            current_recipe_name = ''.join(current_recipe_name)
+            current_recipe_name = ''.join(current_recipe_name).split('))\n')[0].split(' ')[-1]
         elif '<RECIPE_TEXT_BREAK>' in phrase:
+            #print '-->text break'
             state = 'review'
         elif '<RECIPE_REVIEW_BREAK>' in phrase:
+            #print '-->reviewbreak'
             current_recipe_reviews.append([])
         else:
             if state == 'title':
+                #print phrase
                 current_recipe_name.append(phrase)
             elif state == 'text':
+                #print 'text'
                 current_recipe_text.append(phrase)
             elif state == 'review':
+                #print 'review'
                 current_recipe_reviews[-1].append(phrase)
             else:
                 raise ValueError, 'shouldnt get here'
 
-def parse(txt_file, output_file):
-    parser_out = os.popen("../stanford-parser-2012-11-12/lexparser.sh %s" % txt_file).readlines()
+def parse(txt_file, output_file, cpu):
+    parser_out = os.popen("../stanford-parser-2012-11-12/lexparser.sh %s" % txt_file)
+    with open("raw_parsed_all_%d.txt"%cpu,'wb') as f:
+        f.write(parser_out.read())
+    return
+    parser_out = parser_out.readlines()
     parsed = {}
     i = 0
     for recipe_name, recipe_text, reviews in splitParserOutput(parser_out):
-        parsed[recipe_name] = {'instructions':parseParagraph(recipe_text),
+        if not recipe_text or not reviews or len(recipe_text) == 0 or len(reviews) == 0:
+            continue
+        parsedP = parseParagraph(recipe_text),
+        if not parsedP:
+            continue
+        parsed[recipe_name] = {'instructions': parsedP,
                                 'reviews':[]}
         for review in reviews:
-            parsed[recipe_name]['reviews'].append(parseParagraph(review))
+            parsedP = parseParagraph(review)
+            if parsedP:
+                parsed[recipe_name]['reviews'].append(parsedP)
         if i%100 == 0:
             with open(output_file, 'wb') as f:
                 pickle.dump(parsed, f)
         i+=1
+    print parsed
+    with open(output_file, 'wb') as f:
+        pickle.dump(parsed, f)
 
 def parseParagraph(paragraph):
-    bracketed_parse = " ".join( [i.strip() for i in paragraph if len(i.strip()) > 0 and i.strip()[0] == "("])
-
-    #print bracketed_parse
+    start = None
+    for i,p in enumerate(paragraph):
+        if p.find('ROOT') > -1:
+            start = i
+            break
+    if start == None:
+        return None
+    bracketed_parse = " ".join( [i.strip().replace('RRB','').replace('LRB','').replace('\\','').replace('$','')
+                                            for i in paragraph[start:] if len(i.strip()) > 0 and i.strip()[0] == "("])
 
     # Split the parse into an array
     split =  re.split('(\W)', bracketed_parse)

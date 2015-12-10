@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.spatial.distance import cosine as cs_sim
 
 import tensorflow.python.platform
 import tensorflow as tf
@@ -38,6 +39,9 @@ def readData(filename):
 def euclidean_distance(u, v):
 	return -np.linalg.norm(u-v)
 
+def cosine_similarity(u, v):
+	return 1 - cs_sim(u,v)
+
 def build_vocab(recipe_segments, refinement):
 	# build vocab
 	word_to_id = {}
@@ -72,7 +76,7 @@ def build_refinement_vector(refinement, word_to_id):
 		refinement_vector[indx] += 1
 	return refinement_vector
 
-def findBestModificationIndexBOW(recipe_segments, refinement, k=1, similarity_func=euclidean_distance):
+def findBestModificationIndexBOW(recipe_segments, refinement, k=1, similarity_func=cosine_similarity, verbose=False):
 	'''
 	Finds the k best recipe indices to modify for the given refinement,
 	using similarity of word count vectors
@@ -97,10 +101,15 @@ def findBestModificationIndexBOW(recipe_segments, refinement, k=1, similarity_fu
 	for vec in recipe_segment_vectors:
 		index_scores.append(similarity_func(refinement_vector, vec))
 
+	if verbose:
+		print(' '.join(refinement))
+		print(index_scores)	
+		print([' '.join(seg) for seg in recipe_segments])
+
 	index_by_score = sorted(range(len(recipe_segments)), key= lambda i: index_scores[i], reverse=True)
 	return index_by_score[0:k]
 
-def findBestInsertionIndexBOW(recipe_segments, refinement, k=1, similarity_func=euclidean_distance):
+def findBestInsertionIndexBOW(recipe_segments, refinement, k=1, similarity_func=cosine_similarity):
 	'''
 	Finds the k best recipe indices to insert for the given refinement,
 	using similarity of word count vectors
@@ -145,20 +154,35 @@ def testBOW(test_file):
 	data = readData(test_file)
 
 	mod_data = [d for d in data if d[0] == 'modification']
+	print('\nModifications: {0} examples'.format(len(mod_data)))
+	print('\tUsing cosine similarity')
 	predictions_m = []
 	for d in mod_data:
-		predictions_m.append( findBestModificationIndexBOW(d[3], d[2], k=3) )
-
-	print('\nModifications: {0} examples'.format(len(mod_data)))
+		predictions_m.append( findBestModificationIndexBOW(d[3], d[2], k=3, similarity_func=cosine_similarity) )
 	printPredictionStats(predictions_m, mod_data)
 
+	print('\n\tUsing euclidean distance')
+	predictions_m = []
+	for d in mod_data:
+		predictions_m.append( findBestModificationIndexBOW(d[3], d[2], k=3, similarity_func=euclidean_distance) )
+	printPredictionStats(predictions_m, mod_data)
+
+
 	in_data = [d for d in data if d[0] == 'insertion']
+	print('\n\nInsertions: {0} examples'.format(len(in_data)))
+	print('\tUsing cosine similarity')
 	predictions_i = []
 	for d in in_data:
-		predictions_i.append( findBestInsertionIndexBOW(d[3], d[2], k=3) )
-
-	print('\nInsertions: {0} examples'.format(len(in_data)))
+		predictions_i.append( findBestInsertionIndexBOW(d[3], d[2], k=3, similarity_func=cosine_similarity) )
 	printPredictionStats(predictions_i, in_data)
+
+	print('\n\tUsing euclidean distance')
+	predictions_i = []
+	for d in in_data:
+		predictions_i.append( findBestInsertionIndexBOW(d[3], d[2], k=3, similarity_func=euclidean_distance) )
+	printPredictionStats(predictions_i, in_data)
+
+	print('\n\n')
 
 	
 def printPredictionStats(predictions, labeled_data):
@@ -170,8 +194,8 @@ def printPredictionStats(predictions, labeled_data):
 		top1_match.append(int(true_indx == predicted_indx))
 		top3_match.append(int(true_indx in predictions[i]))
 
-	print('Top 1 error: {0} %'.format( 100 - (100.0 * sum(top1_match)/len(top1_match)) ))
-	print('Top 3 error: {0} %'.format( 100 - (100.0 * sum(top3_match)/len(top3_match)) ))
+	print('\tTop 1 error: {0} %'.format( 100 - (100.0 * sum(top1_match)/len(top1_match)) ))
+	print('\tTop 3 error: {0} %'.format( 100 - (100.0 * sum(top3_match)/len(top3_match)) ))
 
 def main(_):
 	if FLAGS.test_file is None:

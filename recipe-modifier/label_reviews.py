@@ -23,7 +23,6 @@ def openLabelFile(labeled_file):
     except:
         return {}
     if labeled_recipes:
-        print labeled_recipes
         return labeled_recipes
     return {}
 def labeler(recipes, labeled_file):
@@ -62,7 +61,7 @@ def labeler(recipes, labeled_file):
                             except:
                                 print 'Enter an integer plus m or i'
                             else:
-                                if indexing < len(recipe_text):
+                                if indexing < len(recipe_text)+1:
                                     current_label[i][j] = (indexing,info)
                                     break
                                 else:

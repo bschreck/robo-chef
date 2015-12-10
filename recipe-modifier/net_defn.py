@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 from __future__ import division
-from __future__ import print(_function
+from __future__ import print_function
 import random
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
@@ -8,6 +8,7 @@ import tensorflow as tf
 from tensorflow.models.rnn import rnn_cell
 from tensorflow.models.rnn import rnn
 from tensorflow.models.rnn import seq2seq
+FLAGS = tf.app.flags.FLAGS
 #make sure it works with buckets defined in reader.py ((num_phrases, num_words_per_phrase))
 
 #Write label creation file, which removes random phrases from recipes,
@@ -71,12 +72,10 @@ class RecipeNet(object):
         softmax_loss_function = None
 
         # Create the internal multi-layer cell for our RNN.
-        single_input_cell = rnn_cell.GRUCell(size)
-        if use_lstm:
-            single_input_cell = rnn_cell.BasicLSTMCell(size)
+        single_input_cell = rnn_cell.LSTMCell(FLAGS.embedding_size//2, 1)
 
         #output cell projects to a weight distribution of size max phrase_num (last bucket)
-        single_output_cell = rnn_cell.LSTMCell(size, size,2*self.buckets[-1][0])
+        single_output_cell = rnn_cell.LSTMCell(2*FLAGS.embedding_size, 2*FLAGS.embedding_size,num_proj=2*self.buckets[-1][0])
         input_cell = single_input_cell
         output_cell = single_output_cell
         if num_input_layers > 1:
@@ -86,35 +85,28 @@ class RecipeNet(object):
         # The seq2seq function: we use embedding for the input and attention.
         def seq2seq_f(encoder_inputs, decoder_inputs):
             return self.multi_layer_embedding_attention_seq2seq(
-                encoder_inputs, decoder_inputs, input_cell, output_cell, vocab_size)
+                encoder_inputs, decoder_inputs, input_cell, output_cell)
         # Feeds for inputs.
         self.encoder_inputs = []
         self.decoder_inputs = []
         self.target_weights = []
         for i in xrange(buckets[-1][1]+1):  # Last bucket is the biggest one.
-            self.encoder_inputs.append(tf.placeholder(tf.int32, shape=[None],
+            self.encoder_inputs.append(tf.placeholder(tf.float32, shape=[FLAGS.batch_size,1],
                                                     name="encoder{0}".format(i)))
         #target weights is 2*len(max_phrase_num) + 1 (+1 for end of recipe phrase)
 
         for i in xrange(2*buckets[-1][0]+1):
-            self.target_weights.append(tf.placeholder(tf.int32, shape=[None],
+            self.target_weights.append(tf.placeholder(tf.int32, shape=[FLAGS.batch_size,1],
                                                     name="weight{0}".format(i)))
             self.decoder_inputs.append([])
             for j in xrange(buckets[-1][1]+1):
-                self.decoder_inputs[-1].append(tf.placeholder(tf.int32, shape=[None],
+                self.decoder_inputs[-1].append(tf.placeholder(tf.float32, shape=[FLAGS.batch_size,1],
                                                     name="decoder{0},{1}".format(i,j)))
 
-        # Training outputs and losses.
-        if forward_only:
-            self.outputs, self.losses = self.model_with_buckets(
-                self.encoder_inputs, self.decoder_inputs,
-                self.target_weights, buckets,
-                lambda x, y: seq2seq_f(x, y))
-        else:
-            self.outputs, self.losses = self.model_with_buckets(
-                self.encoder_inputs, self.decoder_inputs,
-                self.target_weights, buckets,
-                lambda x, y: seq2seq_f(x, y))
+        self.outputs, self.losses = self.model_with_buckets(
+            self.encoder_inputs, self.decoder_inputs,
+            self.target_weights, buckets,
+            lambda x, y: seq2seq_f(x, y))
         # Gradients and SGD update operation for training the model.
         params = tf.trainable_variables()
         if not forward_only:
@@ -165,11 +157,11 @@ class RecipeNet(object):
         # Input feed: encoder inputs, decoder inputs, target_weights, as provided.
         input_feed = {}
         for l in xrange(phrase_len):
-            input_feed[self.encoder_inputs[l].name] = encoder_inputs[l]
+            input_feed[self.encoder_inputs[l].name] = tf.to_float(encoder_inputs[l])
         for l in xrange(phrase_num):
             input_feed[self.target_weights[l].name] = target_weights[l]
             for k in xrange(phrase_len):
-                input_feed[self.decoder_inputs[l][k].name] = decoder_inputs[l][k]
+                input_feed[self.decoder_inputs[l][k].name] = tf.to_float(decoder_inputs[l][k])
 
         # Output feed: depends on whether we do a backward step or not.
         if not forward_only:
@@ -187,11 +179,19 @@ class RecipeNet(object):
             return None, outputs[0], outputs[1:]  # No gradient norm, loss, outputs.
 
     def multi_layer_embedding_attention_seq2seq(self,
-            encoder_inputs, decoder_inputs, input_cell, output_cell, embedding_size, dtype=tf.float32, scope=None):
+            encoder_inputs, decoder_inputs, input_cell, output_cell, dtype=tf.float32, scope=None):
         with tf.variable_scope(scope or "multi_layer_embedding_attention_seq2seq"):
+            #print('decoder:',len(decoder_inputs))
+            print('encoder:',encoder_inputs[0].get_shape())
+            print('embedding_size:', FLAGS.embedding_size)
+            # print('len dec states:',len(decoder_embedding_states))
+            # print('len dec states 0:',len(decoder_embedding_states[0]))
+            # print('shape dec states 0,0:',decoder_embedding_states[0][0].get_shape())
+            # print('shape enc states[-1]:',encoder_states[-1].get_shape())
             with tf.variable_scope("sublevel_embedding_attention_seq2seq"):
+
                 # Encoder.
-                encoder_cell = rnn_cell.EmbeddingWrapper(input_cell, embedding_size)
+                encoder_cell = input_cell
                 encoder_outputs, encoder_states = rnn.rnn(
                     encoder_cell, encoder_inputs, dtype=dtype)
 
@@ -200,7 +200,7 @@ class RecipeNet(object):
                 decoder_embedding_states = []
                 for decoder_input in decoder_inputs:
                     tf.get_variable_scope().reuse_variables()
-                    decoder_embedding_cell = rnn_cell.EmbeddingWrapper(input_cell, embedding_size)
+                    decoder_embedding_cell = input_cell
                     decoder_embedding_cells.append(decoder_embedding_cell)
                     decoder_embedding_output,decoder_embedding_state = rnn.rnn(
                             decoder_embedding_cell, decoder_input, dtype=dtype)
@@ -213,9 +213,18 @@ class RecipeNet(object):
                           # for e in encoder_outputs]
             # attention_states = tf.concat(1, top_states)
 
-            print(tf.shape(decoder_embedding_states[0]))
-            print(tf.shape(encoder_states[-1]))
-            return seq2seq.rnn_decoder([tf.concat(1, [d[-1], encoder_states[-1]]) for d in decoder_embedding_states], tf.zeros_like(encoder_states[-1]),output_cell)
+
+            print('shape enc states[-1]:',decoder_embedding_states[0][-1].get_shape())
+            print('concatted:', tf.concat(1, [decoder_embedding_states[0][-1], encoder_states[-1]]).get_shape())
+            #print('shape enc states[-1]:',encoder_states[-1].get_shape())
+            print('shape output_cell:',output_cell.state_size)
+            print('shape output_cell input:',output_cell.input_size)
+            print('shape output_cell output:',output_cell.output_size)
+            print('output:', output_cell.output_size+2*FLAGS.embedding_size)
+
+            output_state = output_cell.output_size+2*(FLAGS.num_input_layers*(1+FLAGS.embedding_size//2))
+            return seq2seq.rnn_decoder([tf.concat(1, [d[-1], encoder_states[-1]]) for d in decoder_embedding_states],
+                        tf.zeros([FLAGS.batch_size, output_state]),output_cell)
             # return seq2seq.rnn_decoder([d[-1] for d in decoder_embedding_states], encoder_states[-1],output_cell)
 
     def model_with_buckets(self, encoder_inputs, decoder_inputs, targets,
@@ -256,10 +265,11 @@ class RecipeNet(object):
         if len(decoder_inputs[0]) < buckets[-1][1]+1:
             raise ValueError("dim[1] of decoder_inputs  (%d) must be at least that of last"
                            "bucket (%d)." % (len(decoder_inputs), buckets[-1][0]+1))
-        if len(targets) < 2*buckets[-1][0]:
+        if len(targets) < 2*buckets[-1][0]+1:
             raise ValueError("Length of targets (%d) must be at least twice that of last"
                            "bucket (%d)." % (len(targets), buckets[-1][0]))
 
+        #TODO: make this with an additional one
         num_targets = 2*buckets[-1][0]
         all_inputs = encoder_inputs + [d for d in decoder_inputs] + targets
         losses = []
@@ -275,19 +285,20 @@ class RecipeNet(object):
                     bucket_decoder_inputs.append([])
                     for k in xrange(buckets[j][1]+1):
                         bucket_decoder_inputs[-1].append(decoder_inputs[i][k])
+
                 bucket_outputs, _ = seq2seq_func(bucket_encoder_inputs,
                                             bucket_decoder_inputs)
-                outputs.append(bucket_outputs)
+                outputs.append([tf.to_float(o) for o in bucket_outputs])
 
-                output_seq_len = 2*buckets[j][0]
+                output_seq_len = 2*buckets[j][0]+1
                 bucket_targets = [targets[i] for i in xrange(output_seq_len)]
-                bucket_targets.extend([tf.constant(0,dtype=np.int32,shape=[FLAGS.batch_size]) for i in xrange(num_targets-output_seq_len)])
+                #bucket_targets.extend([tf.constant(0,dtype=np.int32,shape=[FLAGS.batch_size]) for i in xrange(num_targets-output_seq_len)])
 
-                #TODO: eventually learn these as parameters:
                 bucket_weights = [tf.constant(1, dtype=np.float32, shape=[FLAGS.batch_size]) for i in xrange(output_seq_len)]
                 #TODO: also extend with constant zeros like in targets
 
                 #TODO: is this function fundamentally different than what we want?
+                print('targets shape:', bucket_targets[0].get_shape())
                 losses.append(seq2seq.sequence_loss(
                     outputs[-1], bucket_targets, bucket_weights, num_targets))
 

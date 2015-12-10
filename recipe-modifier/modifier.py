@@ -33,6 +33,7 @@ import os
 import random
 import sys
 import time
+import util
 
 import tensorflow.python.platform
 
@@ -42,7 +43,6 @@ import tensorflow as tf
 
 from tensorflow.python.platform import gfile
 import reader
-import net_defn
 
 
 tf.app.flags.DEFINE_float("learning_rate", 0.5, "Learning rate.")
@@ -53,7 +53,8 @@ tf.app.flags.DEFINE_float("max_gradient_norm", 5.0,
 tf.app.flags.DEFINE_integer("batch_size", 64,
                             "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("size", 1024, "Size of each model layer.")
-tf.app.flags.DEFINE_integer("num_input_layers", 3, "Number of layers in the model.")
+tf.app.flags.DEFINE_integer("embedding_size", 600, "Size of each model layer.")
+tf.app.flags.DEFINE_integer("num_input_layers", 1, "Number of layers in the model.")
 tf.app.flags.DEFINE_integer("num_output_layers", 1, "Number of layers in the model.")
 
 tf.app.flags.DEFINE_string("data_dir", "/local/robotChef/recipe-modifier", "Data directory")
@@ -72,6 +73,7 @@ tf.app.flags.DEFINE_boolean("self_test", False,
                             "Run a self-test if this is set to True.")
 
 FLAGS = tf.app.flags.FLAGS
+import net_defn
 
 # We use a number of buckets and pad to the closest one for efficiency.
 # See seq2seq_model.Seq2SeqModel for details of how they work.
@@ -87,6 +89,7 @@ def create_model(session, vocab_size, buckets, forward_only):
       FLAGS.max_gradient_norm, FLAGS.batch_size,
       FLAGS.learning_rate, FLAGS.learning_rate_decay_factor,
       use_lstm=True, forward_only=forward_only)
+  summary_op = tf.merge_all_summaries()
   ckpt = tf.train.get_checkpoint_state(FLAGS.train_dir)
   if ckpt and gfile.Exists(ckpt.model_checkpoint_path):
     print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
@@ -99,10 +102,10 @@ def create_model(session, vocab_size, buckets, forward_only):
 
 def train():
   # Prepare WMT data.
-  word_to_id = reader.build_vocab(os.path.join(FLAGS.data_dir, "recipes_train.txt"))
+  word_to_id = reader.build_vocab()
   vocab_size = len(word_to_id)
 
-  with tf.Session() as sess:
+  with tf.Session(config=tf.ConfigProto(allow_soft_placement=False)) as sess, tf.device('/cpu:0'):
 
 
     # Read data into buckets and compute their sizes.
@@ -132,6 +135,9 @@ def train():
       print("bucket_id:", bucket_id)
       print("target_weights:", target_weights.shape)
       print("recipe_segments:", recipe_segments.shape)
+      print("target_weights:", target_weights)
+      print("recipe_segments:", recipe_segments)
+      print("recipe_segments:", refinement_segment)
 
       _, step_loss, _ = model.step(sess, refinement_segment, recipe_segments,
                                    target_weights, bucket_id, False)

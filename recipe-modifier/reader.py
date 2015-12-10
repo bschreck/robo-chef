@@ -7,6 +7,8 @@ import os
 import sys
 import time
 import copy
+import cPickle as pickle
+import util
 
 import tensorflow.python.platform
 
@@ -20,35 +22,33 @@ import generate_refinements as gen
 from itertools import chain
 FLAGS = tf.app.flags.FLAGS
 
-#TODO: TRY DIFFERENT WAYS TO SPLIT SENTENCES (maybe don't replace all punctuation?)
-#IDEALLY PHRASES WILL ALREADY BY SPLIT AT THIS POINT thought
 #see if we need GO symbol?"
 #also should we make a symbol for digits?
 
-_EOP = '<eop>'
-_EOR = '<eor>'
 
 PAD_ID = 0
 UNK_ID = 1
+_EOP_ID = 2
+_EOR_ID = 3
 
-def _read_words(filename):
-    replace_punctuation = string.maketrans(string.punctuation, ' '*len(string.punctuation))
-    #separate recipes with <eor>
-    #separate phrases with <eop>
-    with gfile.GFile(filename, "r") as f:
-        return f.read().translate(replace_punctuation).replace("\t"," <eop> ").replace("\n", " <eor> ").split()
+_EOP = '<eor>'
+_EOR = '<eop>'
+
+# def _read_words(filename):
+    # #separate recipes with <eor>
+    # #separate phrases with <eop>
+    # with gfile.GFile(filename, "r") as f:
+        # return util.phrase2words(f.read().replace("\t"," <eop> ").replace("\n", " <eor> "))
 
 def _read_lines(filename):
-    replace_punctuation = string.maketrans(string.punctuation, ' '*len(string.punctuation))
     #separate recipes with <eor>
     #separate phrases with <eop>
     with gfile.GFile(filename, "r") as f:
         for line in f:
-            no_punc = line.translate(replace_punctuation)
-            by_tab = no_punc.split('\t')
-            label = by_tab[0]
-            refinement = by_tab[1]
-            recipe = by_tab[2:]
+            by_tab = line.split('\t')
+            label = by_tab[0].strip()
+            refinement = by_tab[1].strip().split(' ')
+            recipe = by_tab[2:].strip().split(' ')
             yield label, refinement, recipe
 
 def _read_max_phrase_num_and_len(filename):
@@ -60,19 +60,27 @@ def _read_max_phrase_num_and_len(filename):
 
 
 
-def build_vocab(filename):
-  data = _read_words(filename)
+def build_vocab():
+    #similar to func in pck_to_txt but builds a word 2 int mapping
+    vocab_file = 'vocab_dict.p'
+    vocab_set_file = 'vocab.p'
+    if os.path.isfile(vocab_file):
+        return pickle.load(open(vocab_file, 'rb'))
+    else:
+        data = pickle.load(open(vocab_set_file, 'rb'))
+        words = list(data)
+        # counter = collections.Counter(data)
+        # count_pairs = sorted(counter.items(), key=lambda x: -x[1])
 
-  counter = collections.Counter(data)
-  count_pairs = sorted(counter.items(), key=lambda x: -x[1])
-
-  words, _ = list(zip(*count_pairs))
-  words = list(words)
-  words.insert(0,'_UNK')
-  words.insert(0,'_PAD')
-  word_to_id = dict(zip(words, range(len(words))))
-
-  return word_to_id
+        # words, _ = list(zip(*count_pairs))
+        # words = list(words)
+        words.insert(0,'<eop>')
+        words.insert(0,'<eor>')
+        words.insert(0,'_UNK')
+        words.insert(0,'_PAD')
+        word_to_id = dict(zip(words, range(len(words))))
+        pickle.dump(word_to_id, open(vocab_file,'wb'))
+    return word_to_id
 
 def _get_bucket(num_words, num_phrases, buckets):
     #num_words and num_phrases must be less than or equal to the max in the bucket +1,
@@ -134,22 +142,16 @@ def _file_to_word_ids(filename, word_to_id, unknown_word_id,buckets):
         recipes[bucket] = np.array(recipes[bucket], dtype=np.int32)
     return labels, refinements, recipes
 
-def recipe_raw_data(word_to_id, initial_buckets, corpus='train'):
-    if corpus == 'train':
-        filename = os.path.join(FLAGS.data_dir, FLAGS.train_corpus)
-    elif corpus == 'val':
-        filename = os.path.join(FLAGS.data_dir, FLAGS.val_corpus)
-    else:
-        filename = os.path.join(FLAGS.data_dir, FLAGS.test_corpus)
-    max_phrases_path = os.path.join(FLAGS.data_dir, FLAGS.max_phrases_file)
-
-    max_phrase_num, max_phrase_len = _read_max_phrase_num_and_len(max_phrases_path)
-    buckets=copy.copy(initial_buckets)
-    buckets.append((max_phrase_num, max_phrase_len))
-
+def getDataFiles(corpus):
+    directory = FLAGS.data_dir
+    files = [os.path.join(directory,f) for f in os.listdir(directory) if (
+                                    os.path.isfile(os.path.join(directory,f)) and
+                                    os.path.join(directory,f).endswith('.txt') and
+                                    os.path.join(directory,f).find(corpus) > -1)]
+    return files
+def recipe_raw_data(word_to_id, buckets, filename):
     labels, refinements, recipes = _file_to_word_ids(filename, word_to_id, UNK_ID, buckets)
-    vocabulary = len(word_to_id)
-    return labels, refinements, recipes, vocabulary, max_phrase_num, max_phrase_len,buckets
+    return labels, refinements, recipes
 
 def _draw_buckets(fraction_each_bucket, batch_size, buckets):
     bucket_sel = np.random.random()
@@ -225,31 +227,40 @@ def _index_to_ohe(indices, desired_size):
 def batch_iterator(word_to_id, batch_size, corpus, initial_buckets, all_buckets=False):
     #expand recipes to include blanks between each line
 
-    #loops continuously over corpus
-    labels, refinements, recipes,vocab,max_phrase_num,max_phrase_len, buckets= recipe_raw_data(word_to_id, initial_buckets, corpus=corpus)
+    max_phrases_path = os.path.join(FLAGS.data_dir, FLAGS.max_phrases_file)
+    max_phrase_num, max_phrase_len = _read_max_phrase_num_and_len(max_phrases_path)
+    buckets=initial_buckets
+    buckets.append((max_phrase_num, max_phrase_len))
+
+    vocab = len(word_to_id)
+
     start = True
     while True:
         if start:
             yield buckets
             start = False
-        processed = recipe_iterator(labels, refinements, recipes, batch_size, all_buckets=all_buckets)
-        for i,batch in enumerate(processed):
-            if all_buckets:
-                labels, refinements, recipes = batch
-                for bucket in refinements:
-                    refinements[bucket] = np.rollaxis(refinements[bucket], 1,0)
-                    recipes[bucket] = _add_blanks_to_recipe(np.rollaxis(np.rollaxis(recipes[bucket],1,0),2,1))
-                    labels[bucket] = _index_to_ohe(labels[bucket], recipes[bucket].shape[0])
-                yield labels, refinements, recipes
-            else:
-                bucket, labels, refinements, recipes= batch
-                bucket_id = buckets.index(bucket)
-                #change dimensions so batch is last
-                refinements = np.rollaxis(refinements, 1,0)
-                recipes = np.rollaxis(np.rollaxis(recipes,1,0),2,1)
-                recipes_with_blanks = _add_blanks_to_recipe(recipes)
-                labels  = _index_to_ohe(labels, recipes_with_blanks.shape[0])
-                yield bucket_id, labels, refinements, recipes_with_blanks
+        #loops continuously over corpus
+        for filename in getDataFiles(data_dir, corpus):
+            labels, refinements, recipes = recipe_raw_data(word_to_id, buckets, filename, corpus=corpus)
+
+            processed = recipe_iterator(labels, refinements, recipes, batch_size, all_buckets=all_buckets)
+            for i,batch in enumerate(processed):
+                if all_buckets:
+                    labels, refinements, recipes = batch
+                    for bucket in refinements:
+                        refinements[bucket] = np.rollaxis(refinements[bucket], 1,0)
+                        recipes[bucket] = _add_blanks_to_recipe(np.rollaxis(np.rollaxis(recipes[bucket],1,0),2,1))
+                        labels[bucket] = _index_to_ohe(labels[bucket], recipes[bucket].shape[0])
+                    yield labels, refinements, recipes
+                else:
+                    bucket, labels, refinements, recipes= batch
+                    bucket_id = buckets.index(bucket)
+                    #change dimensions so batch is last
+                    refinements = np.rollaxis(refinements, 1,0)
+                    recipes = np.rollaxis(np.rollaxis(recipes,1,0),2,1)
+                    recipes_with_blanks = _add_blanks_to_recipe(recipes)
+                    labels  = _index_to_ohe(labels, recipes_with_blanks.shape[0])
+                    yield bucket_id, labels, refinements, recipes_with_blanks
 
 # word_to_id = build_vocab(TRAIN_CORPUS)
 # init_buckets = [(10,15), (15,20), (20,25), (25,30), (30,35)]

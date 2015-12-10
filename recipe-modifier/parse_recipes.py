@@ -81,7 +81,7 @@ def parseReviewPhrases(reviews):
                 continue
             else:
                 if len(sent) > 2:
-                    parsed[-1].append(parseSentence(sent))
+                    parsed[-1].extend(parseSentence(sent))
                     #if parsed_sent:
                     #    parsed[-1].append(parsed_sent)
     return parsed
@@ -96,7 +96,7 @@ def parseRecipePhrases(recipe):
                 continue
             else:
                 if len(sent) > 2:
-                    parsed.append(parseSentence(sent))
+                    parsed.extend(parseSentence(sent))
                     # if parsed_sent:
                         # parsed.append(parsed_sent)
     return parsed
@@ -106,7 +106,6 @@ def parseRecipeProcess(unparsed_recipes, txt_file, output_file,cpu):
     # sys.stderr = open("%d.out"%cpu, "a", buffering=0)
     # stan.parse(txt_file, output_file,cpu)
     parsed = {}
-    begin = time.time()
     for i,recipe in enumerate(unparsed_recipes):
         reviews = []
         for review in unparsed_recipes[recipe]['reviews']:
@@ -116,18 +115,12 @@ def parseRecipeProcess(unparsed_recipes, txt_file, output_file,cpu):
                 reviews.append(review)
         reviews = parseReviewPhrases(reviews)
         recipe_text = parseRecipePhrases(unparsed_recipes[recipe]['instructions'])
-        if i == 0:
-            for review in reviews:
-                print review
-            print recipe_text
         parsed[recipe] = {'instructions':recipe_text, 'reviews':reviews}
         # except:
             # continue
         if i%100 == 0:
             with open(output_file, 'wb') as f:
                 pickle.dump(parsed, f)
-    end = time.time()
-    print 'time per recipe:', (end-begin)/25.
 
     with open(output_file, 'wb') as f:
         pickle.dump(parsed, f)

@@ -12,16 +12,13 @@ def parseRecipes(all_recipes_file):
     with open(all_recipes_file,'rb') as f:
         unparsed_recipes = pickle.load(f)
     # toTxtFileProcess(unparsed_recipes, 'parsed.p', 'tmp.txt')
-    onekey = unparsed_recipes.keys()[0]
-    oneelt= unparsed_recipes[onekey]
-    keys = []
-    small_set = {}
-    for key in unparsed_recipes.keys()[:25]:
-        small_set[key] = unparsed_recipes[key]
+    # onekey = unparsed_recipes.keys()[0]
+    # oneelt= unparsed_recipes[onekey]
+    # keys = []
+    # small_set = {}
+    # for key in unparsed_recipes.keys():
+        # small_set[key] = unparsed_recipes[key]
 
-
-    parseRecipeProcess(small_set, 'tmp.txt', 'parsed.p',0)
-    return
     cpus = mp.cpu_count()
     chunksize = len(unparsed_recipes)/cpus
     pool = mp.Pool(processes=cpus)

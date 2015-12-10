@@ -2,7 +2,7 @@
 
 import random
 
-# Duplicate function to avoid circular dependencies between files.. 
+# Duplicate function to avoid circular dependencies between files..
 def generatePhrasesFromStep(step):
     lines = step.split('. ')
     #remove last period
@@ -30,7 +30,7 @@ def random_word_swap(phrase):
 	pass
 
 
-# Removes a random chunk of the phrase. 
+# Removes a random chunk of the phrase.
 def remove_chunk(phrase):
 	words = phrase.split()
 	# Pick two random indices
@@ -40,7 +40,7 @@ def remove_chunk(phrase):
 	if (index1 < index2):
 		start = index1
 		end = index2
-	else: 
+	else:
 		start = index2
 		end = index1
 
@@ -58,7 +58,7 @@ def distort_chunk(phrase):
 	if (index1 < index2):
 		start = index1
 		end = index2
-	else: 
+	else:
 		start = index2
 		end = index1
 
@@ -84,7 +84,7 @@ def write_modified_recipe(phrases, path, phrase_num, modified_phrase, removal):
 			if (i == phrase_num-1):
 				if (removal):
 					continue
-				else: 
+				else:
 					f.write(modified_phrase + '\t')
 			else:
 				f.write(phrase + '\t')

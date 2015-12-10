@@ -1,8 +1,6 @@
 # Convert data in form of many pickle files into 3 text files, train.txt, valid.txt, test.txt
 # Each one contains recipes separated by \n, phrases separated by \t
 
-#TODO: change PAD's to buckets
-
 import cPickle as pickle
 import os
 import numpy as np
@@ -10,7 +8,7 @@ import generate_refinements
 
 def readPickleFile(path):
     with open(path,'rb') as f:
-        _,__,recipes = pickle.load(f)
+        recipes = pickle.load(f)
         for recipe in recipes:
             yield recipes[recipe]['instructions']
 
@@ -85,14 +83,14 @@ def writeAllRecipes(saved_directory, train_file_path, valid_file_path, test_file
 
 
 if __name__ == '__main__':
-    saved_directory = '../scraper/pickle_files/all_recipes'
+    dataset_dir = 'dataset'
 
     train_file_path = 'recipes_train2.txt'
     valid_file_path = 'recipes_valid2.txt'
     test_file_path = 'recipes_test.txt'
     max_phrase_path = 'max_phrases.txt'
     split = (0.8,0.1)
-    writeAllRecipes(saved_directory,
+    writeAllRecipes(dataset,
             train_file_path,
             valid_file_path,
             test_file_path,

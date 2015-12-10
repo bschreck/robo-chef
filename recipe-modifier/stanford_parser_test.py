@@ -89,6 +89,7 @@ def splitParserOutput(parser_out):
                 raise ValueError, 'shouldnt get here'
 
 def parse(txt_file, output_file, cpu):
+
     parser_out = os.popen("../stanford-parser-2012-11-12/lexparser.sh %s" % txt_file)
     with open("raw_parsed_all_%d.txt"%cpu,'wb') as f:
         f.write(parser_out.read())

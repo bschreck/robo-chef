@@ -96,7 +96,7 @@ def create_model(session, vocab_size, buckets, forward_only):
     model.saver.restore(session, ckpt.model_checkpoint_path)
   else:
     print("Created model with fresh parameters.")
-    session.run(tf.variables.initialize_all_variables())
+    session.run(tf.initialize_all_variables())
   return model
 
 

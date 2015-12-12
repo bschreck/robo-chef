@@ -1,0 +1,13 @@
+
+path="../DATACH/"
+#when changing path, change jobstorun also
+
+rm -f ${path}PStatInfo/pStat*
+
+
+#qrun -w -g -X -b jobstorun250 
+cat ${path}PStatInfo/pStat* > ${path}PStats.txt
+echo "---------------------------------------------" > ${path}impres.txt
+date >> ${path}impres.txt
+#finPTest -n1 $path >> ${path}impres.txt
+

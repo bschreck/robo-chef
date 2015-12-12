@@ -1,0 +1,10 @@
+
+path=/pro/dpg/ecdata/cp2/
+
+cat ${path}PStatInfo/pStat* > ${path}PStats.txt
+echo "---------------------------------------------" > ${path}impres.txt
+date >> ${path}impres.txt
+finPTest $path >> ${path}impres.txt
+
+
+

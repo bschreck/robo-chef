@@ -1,0 +1,23 @@
+
+#utrn=/u/ec/ecdata/lm2/f0-20.unk10.txt
+#udev=/u/ec/ecdata/lm2/f21-22.unk10.txt
+utrn=/pro/dpg/ecdata/lm2/f0-20.unk10.txt
+path=../DATA/EN/
+lmpath=../DATA/LM/
+udev=/pro/dpg/ecdata/lm2/f21-22.unk10.txt
+trn=/pro/dpg/ecdata/cp2/train.txt
+dev=/pro/dpg/ecdata/cp2/test.main
+#allScript En $path $trn $dev
+#allScript lm $lmpath $utrn $udev
+
+cpath=../DATA/CH
+ctrn=/pro/dpg/hpp/discrim/ChTreeBank/chinesetrainlarge.txt
+cdev=/pro/dpg/hpp/discrim/ChTreeBank/chinesetestlarge.main
+ctst=/pro/dpg/hpp/discrim/ChTreeBank/chinesetestlarge.final
+
+
+allScript Ch $cpath $ctrn $cdev
+#cat ${ctrn} | pSfgT -LCh $cpath 
+#cat ${trn} | pSgT -LEn $path 
+#cat ${cpath}/bugFix.txt | rCounts -LCh r $cpath/
+#cat ${cdev} | trainRs -LCh r $cpath 

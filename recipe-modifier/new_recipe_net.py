@@ -38,7 +38,7 @@ class RecipeNet(object):
 			encoder_lstm_cell = rnn_cell.DropoutWrapper(encoder_lstm_cell, output_keep_prob=config.keep_prob)
 		self.encoder = rnn_cell.MultiRNNCell([encoder_lstm_cell] * config.num_layers)
 
-		self._initial_encoder_state = tf.ones([recipe_processor_size])
+		self._initial_encoder_state = tf.ones([self._batch_size, encoder_size])
 		self._embedding_matrix = tf.get_variable("embedding_matrix", [vocab_size, encoder_size])
 
 
@@ -49,10 +49,13 @@ class RecipeNet(object):
 			recipe_processor_lstm_cell = rnn_cell.DropoutWrapper(recipe_processor_lstm_cell, output_keep_prob=config.keep_prob)
 		self.recipe_processor = rnn_cell.MultiRNNCell([recipe_processor_lstm_cell] * config.num_layers)
 
-		self._initial_recipe_processor_state = tf.ones([recipe_processor_size])
+		self._initial_recipe_processor_state = tf.ones([self._batch_size, recipe_processor_size])
 
 		self.index_predictor_W = weight_variable([recipe_processor_size, 2])
 		self.index_predictor_b = bias_variable([2])
+
+
+		self._lr = tf.Variable(0.0, trainable=False)
 
 		# self._input_refinement = tf.placeholder(tf.int32, [self._batch_size, None])
 		# self._input_recipe_segment = tf.placeholder(tf.int32, [self._batch_size, None])
@@ -97,21 +100,23 @@ class RecipeNet(object):
 		# optimizer = tf.train.GradientDescentOptimizer(self.lr)
 		# self._train_op = optimizer.apply_gradients(zip(grads, tvars))
 
-	def get_encoded_segment(self, segment):
-		input_segment = tf.constant(segment)
+	def get_encoded_segment(self, segment, reuse):
+		input_segment = tf.constant([segment])
 		inputs = tf.split(1, len(segment), tf.nn.embedding_lookup(self._embedding_matrix, input_segment))
 		inputs = [tf.squeeze(input_, [1]) for input_ in inputs]
 
-		encoder_outputs, encoder_states = rnn.rnn(self.encoder, inputs, initial_state=self._initial_encoder_state)
+		with tf.variable_scope("encoder", reuse=reuse):
+			encoder_outputs, encoder_states = rnn.rnn(self.encoder, inputs, initial_state=self._initial_encoder_state)
 		return encoder_outputs[-1]
 
 	def get_index_predictions(self, recipe_segments, refinement):
+		encoded_refinement = self.get_encoded_segment(refinement, None)
+
 		encoded_recipe_segments = []
 		for segment in recipe_segments:
-			encoded_recipe_segments.append(self.get_encoded_segment(segment))
-		encoded_refinement = self.get_encoded_segment(refinement)
+			encoded_recipe_segments.append(self.get_encoded_segment(segment, True))
 
-		inputs = [tf.concat(0,[encoded_refinement, seg]) for seg in encoded_recipe_segments]
+		inputs = [tf.concat(1,[encoded_refinement, seg]) for seg in encoded_recipe_segments]
 		recipe_processor_outputs, recipe_processor_states = rnn.rnn(self.recipe_processor, inputs, initial_state=self._initial_recipe_processor_state)
 
 		logits_per_index = []
@@ -121,30 +126,38 @@ class RecipeNet(object):
 
 	def process_labeled_example(self, recipe_segments, refinement, refinement_index):
 
-		logits = tf.concat(0, self.get_index_predictions(recipe_segments, refinement))
+		# logits = tf.concat(0, self.get_index_predictions(recipe_segments, refinement))
+		logits = self.get_index_predictions(recipe_segments, refinement)
 
-		print('logits shape: {0}'.format(logits.get_shape()))
+		print('logits shape: {0}, {1}'.format(len(logits), logits[0].get_shape()))
 
 		targets_as_list = [0]*len(recipe_segments)
 		targets_as_list[refinement_index] = 1
-		targets = tf.constant(targets_as_list, tf.int32)
+		# targets = tf.constant(targets_as_list, tf.int32)
+		targets = [tf.constant([t], tf.int32) for t in targets_as_list]
 
-		loss = seq2seq.sequence_loss_by_example([logits],
-												[targets],
-												[tf.ones([len(recipe_segments)])],
+		print('targets shape: {0}, {1}'.format(len(targets), targets[0].get_shape()))
+		print('weights shape: {0}, {1}'.format(len(recipe_segments), tf.ones([1]).get_shape()))
+
+		loss = seq2seq.sequence_loss_by_example(logits,
+												targets,
+												[tf.ones([1])]*len(recipe_segments),
 												2)
 		self._cost = cost = tf.reduce_sum(loss)
 
-		self._lr = tf.Variable(0.0, trainable=False)
+		print('cost shape: {0}'.format(cost.get_shape()))
+
 		tvars = tf.trainable_variables()
 		grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars),
 		                                  config.max_grad_norm)
 		optimizer = tf.train.GradientDescentOptimizer(self.lr)
-		self._train_op = optimizer.apply_gradients(zip(grads, tvars))
+		train_op = optimizer.apply_gradients(zip(grads, tvars))
+
+		return train_op
 
 
 	def assign_lr(self, session, lr_value):
-    	session.run(tf.assign(self.lr, lr_value))
+		session.run(tf.assign(self.lr, lr_value))
 
 	# @property
 	# def input_data(self):
@@ -170,17 +183,17 @@ class RecipeNet(object):
 	def lr(self):
 		return self._lr
 
-	@property
-	def train_op(self):
-		return self._train_op
+	# @property
+	# def train_op(self):
+	# 	return self._train_op
 
-	def weight_variable(shape):
-		initial = tf.truncated_normal(shape, stddev=0.1)
-		return tf.Variable(initial)
+def weight_variable(shape):
+	initial = tf.truncated_normal(shape, stddev=0.1)
+	return tf.Variable(initial)
 
-	def bias_variable(shape):
-		initial = tf.constant(0.1, shape=shape)
-		return tf.Variable(initial)
+def bias_variable(shape):
+	initial = tf.constant(0.1, shape=shape)
+	return tf.Variable(initial)
 
 class Config(object):
 	"""Configuration parameters."""
@@ -195,14 +208,13 @@ class Config(object):
 	max_max_epoch = 8
 	keep_prob = 1.0
 	lr_decay = 0.5
-	batch_size = 20
+	# batch_size = 20
 
 	def __init__(self, n=10000):
 		self.vocab_size = n
 
-def create_model(session, vocab_size, is_training):
+def create_model(session, config, is_training):
 	"""Create translation model and initialize or load parameters in session."""
-	config = Config(vocab_size)
 
 	initializer = tf.random_uniform_initializer(-config.init_scale, config.init_scale)
 	with tf.variable_scope("model", initializer=initializer):
@@ -218,14 +230,18 @@ def create_model(session, vocab_size, is_training):
 		session.run(tf.initialize_all_variables())
 	return model
 
-def run_epoch(session, m, data, eval_op):
+def run_epoch(session, m, data, use_train_op):
 	"""Runs the model on the given data."""
 	
 	total_costs = 0.0
 	iters = 0
 	for recipe_segments, refinement, refinement_index in data:
-		m.process_labeled_example(recipe_segments, refinement, refinement_index)
-		cost = session.run([m.cost, eval_op])
+		train_op = m.process_labeled_example(recipe_segments, refinement, refinement_index)
+
+		if use_train_op:
+			cost = session.run([m.cost, train_op])
+		else:
+			cost = session.run([m.cost, tf.no_op()])
 
 		total_costs += cost
 		iters += 1
@@ -240,16 +256,18 @@ def train():
 	word_to_id = reader.build_vocab()
 	vocab_size = len(word_to_id)
 
+	config = Config(vocab_size)
+
 	with tf.Graph().as_default(), tf.Session(config=tf.ConfigProto(allow_soft_placement=False)) as sess, tf.device('/cpu:0'):
 
-		model = create_model(sess, vocab_size, True)
+		model = create_model(sess, config, True)
 
 		# Add ops to save and restore all the variables.
 		saver = tf.train.Saver()
 
 		for i in range(config.max_max_epoch):
 			lr_decay = config.lr_decay ** max(i - config.max_epoch, 0.0)
-			m.assign_lr(sess, config.learning_rate * lr_decay)
+			model.assign_lr(sess, config.learning_rate * lr_decay)
 
 			# Read data into buckets and compute their sizes.
 			print ("Reading development and training data.")
@@ -258,12 +276,28 @@ def train():
 
 
 			print("Epoch: %d Learning rate: %.3f" % (i + 1, sess.run(model.lr)))
-			train_avg_loss = run_epoch(sess, model, train_set, model.train_op)
+			train_avg_loss = run_epoch(sess, model, train_set, True)
 			print("Epoch: %d Train Perplexity: %.3f" % (i + 1, train_avg_loss))
-			validation_avg_loss = run_epoch(sess, model, dev_set, tf.no_op())
+			validation_avg_loss = run_epoch(sess, model, dev_set, False)
 			print("Epoch: %d Valid Perplexity: %.3f" % (i + 1, validation_avg_loss))
 
-	    # Save the variables to disk.
-	    save_path = saver.save(sess, FLAGS.model_path)
-	    print("Model saved in file: {0}".format(save_path))
+		# Save the variables to disk.
+		save_path = saver.save(sess, FLAGS.model_path)
+		print("Model saved in file: {0}".format(save_path))
 
+
+
+
+def main(unused_args):
+	if not FLAGS.data_dir:
+		raise ValueError("Must set --data_dir to PTB data directory")
+	if not FLAGS.train_dir:
+		raise ValueError("Must set --train_dir to PTB data directory")
+	if not FLAGS.model_path:
+		raise ValueError("Must set --model_path to an output directory")
+
+	train()
+
+
+if __name__ == "__main__":
+  tf.app.run()

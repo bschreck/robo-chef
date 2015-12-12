@@ -50,7 +50,7 @@ def _read_lines(filename):
             by_tab = line.split('\t')
             label = by_tab[0].strip()
             refinement = by_tab[1].strip().split(' ')
-            recipe = by_tab[2:].strip().split(' ')
+            recipe = [segment.strip().split(' ') for segment in by_tab[2:]]
             yield label, refinement, recipe
 
 def _read_max_phrase_num_and_len(filename):
@@ -235,10 +235,10 @@ def _read_file_no_buckets(filename):
             refinement_indx = (abs(label) - 1)*2 + 1
         else:
             refinement_indx = (abs(label) - 1)*2
-        padded_recipe = [_IRS]
+        padded_recipe = [[_IRS]]
         for seg in recipe:
             padded_recipe.append(seg)
-            padded_recipe.append(_IRS)
+            padded_recipe.append([_IRS])
         assert refinement_indx < len(padded_recipe), 'index conversion is screwed up'
         yield padded_recipe, refinement, refinement_indx
 
@@ -246,12 +246,12 @@ def bucketless_recipe_iterator(word_to_id, corpus):
     unknown_word_id = word_to_id['_UNK']
 
     #loops continuously over corpus
-    for filename in getDataFiles(FLAGS.data_dir, corpus):
+    for filename in getDataFiles(corpus):
         for recipe, refinement, refinement_indx in _read_file_no_buckets(filename):
             recipe_word_ids = []
             for seg in recipe:
-                recipe_word_ids.append([word_to_id[w] if w in word_to_id else unknown_word_id for w in seg.split()])
-            refinement_word_ids = [word_to_id[w] if w in word_to_id else unknown_word_id for w in refinement.split()]
+                recipe_word_ids.append([word_to_id[w] if w in word_to_id else unknown_word_id for w in seg])
+            refinement_word_ids = [word_to_id[w] if w in word_to_id else unknown_word_id for w in refinement]
 
             yield recipe_word_ids, refinement_word_ids, refinement_indx
 

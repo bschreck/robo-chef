@@ -34,6 +34,8 @@ _EOR_ID = 3
 _EOP = '<eor>'
 _EOR = '<eop>'
 
+_IRS = '<INTER_SEGMENT_SPACE>'
+
 # def _read_words(filename):
     # #separate recipes with <eor>
     # #separate phrases with <eop>
@@ -74,6 +76,7 @@ def build_vocab():
 
         # words, _ = list(zip(*count_pairs))
         # words = list(words)
+        words.insert(0,_IRS)
         words.insert(0,'<eop>')
         words.insert(0,'<eor>')
         words.insert(0,'_UNK')
@@ -149,6 +152,7 @@ def getDataFiles(corpus):
                                     os.path.join(directory,f).endswith('.txt') and
                                     os.path.join(directory,f).find(corpus) > -1)]
     return files
+
 def recipe_raw_data(word_to_id, buckets, filename):
     labels, refinements, recipes = _file_to_word_ids(filename, word_to_id, UNK_ID, buckets)
     return labels, refinements, recipes
@@ -223,6 +227,34 @@ def _index_to_ohe(indices, desired_size):
     for batch,i in enumerate(indices):
         output[i, batch] = 1
     return output
+
+def _read_file_no_buckets(filename):
+    for label_str, refinement, recipe in _read_lines(filename):
+        label = int(label_str)
+        if label > 0:
+            refinement_indx = (abs(label) - 1)*2 + 1
+        else:
+            refinement_indx = (abs(label) - 1)*2
+        padded_recipe = [_IRS]
+        for seg in recipe:
+            padded_recipe.append(seg)
+            padded_recipe.append(_IRS)
+        assert refinement_indx < len(padded_recipe), 'index conversion is screwed up'
+        yield padded_recipe, refinement, refinement_indx
+
+def bucketless_recipe_iterator(word_to_id, corpus):
+    unknown_word_id = word_to_id['_UNK']
+
+    #loops continuously over corpus
+    for filename in getDataFiles(FLAGS.data_dir, corpus):
+        for recipe, refinement, refinement_indx in _read_file_no_buckets(filename):
+            recipe_word_ids = []
+            for seg in recipe:
+                recipe_word_ids.append([word_to_id[w] if w in word_to_id else unknown_word_id for w in seg.split()])
+            refinement_word_ids = [word_to_id[w] if w in word_to_id else unknown_word_id for w in refinement.split()]
+
+            yield recipe_word_ids, refinement_word_ids, refinement_indx
+
 
 def batch_iterator(word_to_id, batch_size, corpus, initial_buckets, all_buckets=False):
     #expand recipes to include blanks between each line

@@ -13,6 +13,15 @@ from tensorflow.models.rnn import rnn
 from tensorflow.models.rnn import rnn_cell
 from tensorflow.models.rnn import seq2seq
 
+import reader
+
+
+tf.app.flags.DEFINE_string("train_dir", None, "Training directory where checkpoints should be saved.")
+tf.app.flags.DEFINE_string("data_dir", None, "Data directory.")
+tf.app.flags.DEFINE_string("model_path", None, "Path for trained model.")
+
+
+FLAGS = tf.app.flags.FLAGS
 
 class RecipeNet(object):
 	def __init__(self, is_training, config):
@@ -190,4 +199,71 @@ class Config(object):
 
 	def __init__(self, n=10000):
 		self.vocab_size = n
+
+def create_model(session, vocab_size, is_training):
+	"""Create translation model and initialize or load parameters in session."""
+	config = Config(vocab_size)
+
+	initializer = tf.random_uniform_initializer(-config.init_scale, config.init_scale)
+	with tf.variable_scope("model", initializer=initializer):
+		model = RecipeNet(is_training, config)
+
+	summary_op = tf.merge_all_summaries()
+	ckpt = tf.train.get_checkpoint_state(FLAGS.train_dir)
+	if is_training and ckpt and gfile.Exists(ckpt.model_checkpoint_path):
+		print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
+		model.saver.restore(session, ckpt.model_checkpoint_path)
+	else:
+		print("Created model with fresh parameters.")
+		session.run(tf.initialize_all_variables())
+	return model
+
+def run_epoch(session, m, data, eval_op):
+	"""Runs the model on the given data."""
+	
+	total_costs = 0.0
+	iters = 0
+	for recipe_segments, refinement, refinement_index in data:
+		m.process_labeled_example(recipe_segments, refinement, refinement_index)
+		cost = session.run([m.cost, eval_op])
+
+		total_costs += cost
+		iters += 1
+
+	if iters % 100 == 0:
+		print('Iteration {0}: avg loss = {1}'.format(iters, total_costs/iters))
+
+	return total_costs/iters
+
+def train():
+	# Prepare WMT data.
+	word_to_id = reader.build_vocab()
+	vocab_size = len(word_to_id)
+
+	with tf.Graph().as_default(), tf.Session(config=tf.ConfigProto(allow_soft_placement=False)) as sess, tf.device('/cpu:0'):
+
+		model = create_model(sess, vocab_size, True)
+
+		# Add ops to save and restore all the variables.
+		saver = tf.train.Saver()
+
+		for i in range(config.max_max_epoch):
+			lr_decay = config.lr_decay ** max(i - config.max_epoch, 0.0)
+			m.assign_lr(sess, config.learning_rate * lr_decay)
+
+			# Read data into buckets and compute their sizes.
+			print ("Reading development and training data.")
+			dev_set = reader.bucketless_recipe_iterator(word_to_id, 'val')
+			train_set = reader.bucketless_recipe_iterator(word_to_id, 'train')
+
+
+			print("Epoch: %d Learning rate: %.3f" % (i + 1, sess.run(model.lr)))
+			train_avg_loss = run_epoch(sess, model, train_set, model.train_op)
+			print("Epoch: %d Train Perplexity: %.3f" % (i + 1, train_avg_loss))
+			validation_avg_loss = run_epoch(sess, model, dev_set, tf.no_op())
+			print("Epoch: %d Valid Perplexity: %.3f" % (i + 1, validation_avg_loss))
+
+	    # Save the variables to disk.
+	    save_path = saver.save(sess, FLAGS.model_path)
+	    print("Model saved in file: {0}".format(save_path))
 

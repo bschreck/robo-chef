@@ -134,12 +134,23 @@ class LangModel(object):
     logits = tf.nn.xw_plus_b(output,
                              tf.get_variable("softmax_w", [size, vocab_size]),
                              tf.get_variable("softmax_b", [vocab_size]))
+
+    print('logits shape: {0}'.format(logits.get_shape()))
+
+    targets__ = tf.reshape(self._targets, [-1])
+    print('targets shape: {0}'.format(targets__.get_shape()))
+
+    print('weights shape: {0}'.format(tf.ones([batch_size * num_steps]).get_shape()))
+
+
     loss = seq2seq.sequence_loss_by_example([logits],
-                                            [tf.reshape(self._targets, [-1])],
+                                            [targets__],
                                             [tf.ones([batch_size * num_steps])],
                                             vocab_size)
     self._cost = cost = tf.reduce_sum(loss) / batch_size
     self._final_state = states[-1]
+
+    print('cost shape: {0}'.format(cost.get_shape()))
 
     if not is_training:
       return
@@ -335,7 +346,7 @@ def scoreData(review_segments, data_path, model_path, model_size):
 
     # Score the review segments
     for segment in segments_data:
-      loglikelihood = np.log(run_epoch(session, model, segment, tf.no_op()))
+      loglikelihood = -np.log(run_epoch(session, model, segment, tf.no_op()))
       segments_scores.append(loglikelihood)
       print("Test Avg Loglikelihood: %.3f" % loglikelihood)
 

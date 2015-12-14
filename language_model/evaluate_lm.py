@@ -8,7 +8,7 @@ import tensorflow as tf
 import recipe_lm as lm
 
 tf.app.flags.DEFINE_string("train_data_path", None, "data_path")
-# tf.app.flags.DEFINE_string("model_path", None, "model_path")
+tf.app.flags.DEFINE_string("trained_model_path", None, "trained_model_path")
 tf.app.flags.DEFINE_string("test_file", None, "Path to test file")
 tf.app.flags.DEFINE_string("model_size", "small","A type of model. Possible options are: small, medium, large.")
 
@@ -113,7 +113,7 @@ def precision(truePos, falsePos):
 
 def evaluateLM(review_segments, labels):
 	print review_segments[0]
-	scores = lm.scoreData(review_segments, FLAGS.train_data_path, FLAGS.model_path, FLAGS.model_size)
+	scores = lm.scoreData(review_segments, FLAGS.train_data_path, FLAGS.trained_model_path, FLAGS.model_size)
 
 	best_F1 = 0
 	best_threshold = 0
@@ -148,8 +148,8 @@ def evaluateLM(review_segments, labels):
 def main(_):
 	if not FLAGS.train_data_path:
 		raise ValueError("Must set --train_data_path to PTB data directory")
-	if not FLAGS.model_path:
-		raise ValueError("Must set --model_path to an output directory")
+	if not FLAGS.trained_model_path:
+		raise ValueError("Must set --trained_model_path to an output directory")
 	if FLAGS.test_file is None:
 		raise ValueError("Must set --test_file")
 	

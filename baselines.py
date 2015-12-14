@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.spatial.distance import cosine as cs_sim
+from scipy.spatial import distance
 
 import tensorflow.python.platform
 import tensorflow as tf
@@ -38,9 +38,14 @@ def readData(filename):
 
 def euclidean_distance(u, v):
 	return -np.linalg.norm(u-v)
-
 def cosine_similarity(u, v):
-	return 1 - cs_sim(u,v)
+	return 1 - distance.cosine(u,v)
+def correlation_distance(u, v):
+	return 1 - distance.correlation(u,v)
+def canberra_distance(u, v):
+	return  -distance.canberra(u,v)
+def braycurtis_distance(u, v):
+	return  -distance.braycurtis(u,v)
 
 def build_vocab(recipe_segments, refinement):
 	# build vocab
@@ -161,10 +166,10 @@ def testBOW(test_file):
 		predictions_m.append( findBestModificationIndexBOW(d[3], d[2], k=3, similarity_func=cosine_similarity) )
 	printPredictionStats(predictions_m, mod_data)
 
-	print('\n\tUsing euclidean distance')
+	print('\n\tUsing Bray-Curtis distance')
 	predictions_m = []
 	for d in mod_data:
-		predictions_m.append( findBestModificationIndexBOW(d[3], d[2], k=3, similarity_func=euclidean_distance) )
+		predictions_m.append( findBestModificationIndexBOW(d[3], d[2], k=3, similarity_func=braycurtis_distance) )
 	printPredictionStats(predictions_m, mod_data)
 
 
@@ -176,10 +181,10 @@ def testBOW(test_file):
 		predictions_i.append( findBestInsertionIndexBOW(d[3], d[2], k=3, similarity_func=cosine_similarity) )
 	printPredictionStats(predictions_i, in_data)
 
-	print('\n\tUsing euclidean distance')
+	print('\n\tUsing Bray-Curtis distance')
 	predictions_i = []
 	for d in in_data:
-		predictions_i.append( findBestInsertionIndexBOW(d[3], d[2], k=3, similarity_func=euclidean_distance) )
+		predictions_i.append( findBestInsertionIndexBOW(d[3], d[2], k=3, similarity_func=braycurtis_distance) )
 	printPredictionStats(predictions_i, in_data)
 
 	print('\n\n')

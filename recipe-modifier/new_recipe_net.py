@@ -41,6 +41,9 @@ FLAGS = tf.app.flags.FLAGS
 _initial_buckets = [(20,15), (30,20), (40,25), (50,30), (60,35)]
 #_initial_buckets = [(10,15), (16,25), (22,30), (28,40), (34,50)]
 
+
+
+
 class RecipeNet(object):
     def __init__(self, is_training, config):
         self._batch_size = FLAGS.batch_size
@@ -345,6 +348,7 @@ class Config(object):
 
 def create_model(session, config, is_training):
     """Create translation model and initialize or load parameters in session."""
+
     initializer = tf.random_uniform_initializer(-config.init_scale, config.init_scale)
     with tf.variable_scope("model", initializer=initializer):
         model = RecipeNet(is_training, config)
@@ -395,7 +399,6 @@ def train():
         while True:
             # Get a batch and make a step.
             start_time = time.time()
-            #TODO: randomize inputs
             bucket_id, target_weights, refinement_segment, recipe_segments = train_set.next()
             if bucket_id > 3:
                 continue
@@ -446,11 +449,6 @@ def train():
                     eval_ppx = math.exp(eval_cost) if eval_cost < 300 else float('inf')
                     print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))
                 sys.stdout.flush()
-
-
-			for recipe_segments, refinement, refinement_index in train_set:
-				logits = sess.run(model.get_index_predictions(recipe_segments, refinement))
-				print(logits)
 
 
 

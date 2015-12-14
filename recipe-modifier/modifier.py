@@ -52,8 +52,8 @@ tf.app.flags.DEFINE_float("max_gradient_norm", 5.0,
                           "Clip gradients to this norm.")
 tf.app.flags.DEFINE_integer("batch_size", 64,
                             "Batch size to use during training.")
-tf.app.flags.DEFINE_integer("size", 1024, "Size of each model layer.")
-tf.app.flags.DEFINE_integer("embedding_size", 600, "Size of each model layer.")
+tf.app.flags.DEFINE_integer("size", 256, "Size of each model layer.")
+tf.app.flags.DEFINE_integer("embedding_size", 300, "Size of each model layer.")
 tf.app.flags.DEFINE_integer("num_input_layers", 1, "Number of layers in the model.")
 tf.app.flags.DEFINE_integer("num_output_layers", 1, "Number of layers in the model.")
 
@@ -91,6 +91,7 @@ def create_model(session, vocab_size, buckets, forward_only):
       use_lstm=True, forward_only=forward_only)
   summary_op = tf.merge_all_summaries()
   ckpt = tf.train.get_checkpoint_state(FLAGS.train_dir)
+  sys.stdout.flush()
   if ckpt and gfile.Exists(ckpt.model_checkpoint_path):
     print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
     model.saver.restore(session, ckpt.model_checkpoint_path)
@@ -145,7 +146,6 @@ def train():
       step_time += (time.time() - start_time) / FLAGS.steps_per_checkpoint
       loss += step_loss / FLAGS.steps_per_checkpoint
       current_step += 1
-      sys.exit()
 
       # Once in a while, we save checkpoint, print statistics, and run evals.
       if current_step % FLAGS.steps_per_checkpoint == 0:

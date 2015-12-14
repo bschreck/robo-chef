@@ -44,12 +44,13 @@ def buildVocab(dataset):
             for instructions,reviews in readPickleFile(f,reviews=True):
                 for s in instructions:
                     for w in util.phrase2words(s):
-                        vocab.add(word)
+                        vocab.add(w)
                 for r in reviews:
                     for p in r:
                         for w in util.phrase2words(s):
-                            vocab.add(word)
+                            vocab.add(w)
         pickle.dump(vocab, open(vocab_file,'wb'))
+        return vocab
 
 def pickleFiles(directory):
     files = [os.path.join(directory,f) for f in os.listdir(directory) if (
@@ -119,12 +120,12 @@ def writeAllRecipes(dataset, train_file_path, valid_file_path, test_file_path, m
 
 
 if __name__ == '__main__':
-    dataset_dir = 'dataset'
+    dataset_dir = 'pck_dataset'
 
-    train_file_path = 'dataset/recipes_train.txt'
-    valid_file_path = 'dataset/recipes_valid.txt'
-    test_file_path = 'dataset/recipes_test.txt'
-    max_phrase_path = 'max_phrases.txt'
+    train_file_path = 'full_sentence_dataset/recipes_train.txt'
+    valid_file_path = 'full_sentence_dataset/recipes_valid.txt'
+    test_file_path = 'full_sentence_dataset/recipes_test.txt'
+    max_phrase_path = 'full_sentence_dataset/max_phrases.txt'
     split = (0.8,0.1)
     writeAllRecipes(dataset_dir,
             train_file_path,

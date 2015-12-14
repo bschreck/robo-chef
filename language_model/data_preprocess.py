@@ -7,7 +7,7 @@ UNK_THRESHOLD = 25
 
 def extractRecipeInstructionsFromPickleFile(filename):
 	f = open(filename)
-	_, _, recipes = pickle.load(f)
+	recipes = pickle.load(f)
 	f.close()
 
 	instruction_steps = []
@@ -97,7 +97,7 @@ def countWords(data):
 
 
 #######################   PREP DATA   #######################
-# generateLanguageModelData('../data/all_recipes/', '../data/lm_data.txt')
-# splitData('../data/lm_data.txt', 0.05, '../data/lm.train.txt', '../data/lm.valid.txt')
+generateLanguageModelData('../data/parsed_recipes/', '../data/lm_data.txt')
+splitData('../data/lm_data.txt', 0.05, '../data/lm.train.txt', '../data/lm.valid.txt')
 
 

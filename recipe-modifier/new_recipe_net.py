@@ -105,8 +105,12 @@ class RecipeNet(object):
 		inputs = tf.split(1, len(segment), tf.nn.embedding_lookup(self._embedding_matrix, input_segment))
 		inputs = [tf.squeeze(input_, [1]) for input_ in inputs]
 
+		print('encoder inputs shape: {0}, {1}'.format(len(inputs), inputs[0].get_shape()))
+
 		with tf.variable_scope("encoder", reuse=reuse):
 			encoder_outputs, encoder_states = rnn.rnn(self.encoder, inputs, initial_state=self._initial_encoder_state)
+
+		print('encoder_outputs shape: {0}, {1}'.format(len(encoder_outputs), encoder_outputs[-1].get_shape()))
 		return encoder_outputs[-1]
 
 	def get_index_predictions(self, recipe_segments, refinement):
@@ -117,7 +121,8 @@ class RecipeNet(object):
 			encoded_recipe_segments.append(self.get_encoded_segment(segment, True))
 
 		inputs = [tf.concat(1,[encoded_refinement, seg]) for seg in encoded_recipe_segments]
-		recipe_processor_outputs, recipe_processor_states = rnn.rnn(self.recipe_processor, inputs, initial_state=self._initial_recipe_processor_state)
+		with tf.variable_scope("recipe_processor"):
+			recipe_processor_outputs, recipe_processor_states = rnn.rnn(self.recipe_processor, inputs, initial_state=self._initial_recipe_processor_state)
 
 		logits_per_index = []
 		for output in recipe_processor_outputs:
@@ -200,8 +205,7 @@ class Config(object):
 	init_scale = 0.1
 	learning_rate = 1.0
 	max_grad_norm = 5
-	num_layers = 2
-	num_steps = 20
+	num_layers = 1
 	encoder_hidden_size = 200
 	recipe_processor_hidden_size = 400  # must be 2x the size of encoder_hidden_size
 	max_epoch = 4
@@ -216,9 +220,9 @@ class Config(object):
 def create_model(session, config, is_training):
 	"""Create translation model and initialize or load parameters in session."""
 
-	initializer = tf.random_uniform_initializer(-config.init_scale, config.init_scale)
-	with tf.variable_scope("model", initializer=initializer):
-		model = RecipeNet(is_training, config)
+	# initializer = tf.random_uniform_initializer(-config.init_scale, config.init_scale)
+	# with tf.variable_scope("model", initializer=initializer):
+	model = RecipeNet(is_training, config)
 
 	summary_op = tf.merge_all_summaries()
 	ckpt = tf.train.get_checkpoint_state(FLAGS.train_dir)
@@ -273,6 +277,11 @@ def train():
 			print ("Reading development and training data.")
 			dev_set = reader.bucketless_recipe_iterator(word_to_id, 'val')
 			train_set = reader.bucketless_recipe_iterator(word_to_id, 'train')
+
+			for recipe_segments, refinement, refinement_index in train_set:
+				logits = sess.run(model.get_index_predictions(recipe_segments, refinement))
+				print(logits)
+
 
 
 			print("Epoch: %d Learning rate: %.3f" % (i + 1, sess.run(model.lr)))

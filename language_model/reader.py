@@ -38,6 +38,8 @@ import tensorflow as tf
 
 from tensorflow.python.platform import gfile
 
+import data_preprocess as dpp
+
 
 def _read_words(filename):
   with gfile.GFile(filename, "r") as f:
@@ -86,8 +88,9 @@ def get_raw_training_data(data_path=None):
   return train_data, valid_data, vocabulary_size, word_to_id
 
 def process_review_segments(review_segments, word_to_id):
+  processed_segments = dpp.processesPuntuation(review_segments)
   segments_data = []
-  for segment in review_segments:
+  for segment in processed_segments:
     seg_data = [word_to_id.get(word, 0) for word in segment.replace("\n", "<eos>").split()]
     segments_data.append(seg_data)
 

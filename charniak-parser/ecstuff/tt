@@ -1,0 +1,6 @@
+	
+#cat bugReport | parseIt DATA/ 
+wwBCTest  DATA/ /pro/dpg/ecdata/cp2/test.final
+#rParse -T10 -d7799  DATA/ files.txt
+#wwBCTest -M DATALM/ /pro/dpg/ecdata/lm2/f23-24.unk10.txt
+

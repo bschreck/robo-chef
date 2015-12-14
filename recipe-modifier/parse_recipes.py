@@ -8,16 +8,9 @@ import sys
 import re
 
 
-def parseRecipes(all_recipes_file):
+def parseRecipes(all_recipes_file, breakIntoPhrases):
     with open(all_recipes_file,'rb') as f:
         unparsed_recipes = pickle.load(f)
-    # toTxtFileProcess(unparsed_recipes, 'parsed.p', 'tmp.txt')
-    # onekey = unparsed_recipes.keys()[0]
-    # oneelt= unparsed_recipes[onekey]
-    # keys = []
-    # small_set = {}
-    # for key in unparsed_recipes.keys():
-        # small_set[key] = unparsed_recipes[key]
 
     cpus = mp.cpu_count()
     chunksize = len(unparsed_recipes)/cpus
@@ -32,34 +25,32 @@ def parseRecipes(all_recipes_file):
             recipe_key_chunk = recipe_keys[cpu*chunksize:]
         for key in recipe_key_chunk:
             chunk[key] = unparsed_recipes[key]
-        output_file = "parsed_%d.p"%cpu
-        tmp_file = "tmp_%d.txt"%cpu
-        #p = pool.apply_async(toTxtFileProcess, [chunk, output_file, tmp_file])
-        p = pool.apply_async(parseRecipeProcess, [chunk, tmp_file, output_file, cpu])
+        output_file = "pck_dataset/full_sentences%d.p"%cpu
+        p = pool.apply_async(parseRecipeProcess, [chunk, output_file, cpu, breakIntoPhrases])
         processes.append(p)
     [p.get() for p in processes]
 
-def toTxtFileProcess(unparsed_recipes, output_file, txt_file):
-    with open(txt_file, 'wb') as f:
-        for i,recipe in enumerate(unparsed_recipes):
-            if i == 3:
-                return
-            try:
-                reviews = []
-                for review in unparsed_recipes[recipe]['reviews']:
-                    if type(review) == dict:
-                        reviews.append(review['text'])
-                    else:
-                        reviews.append(review)
-                recipe_list = unparsed_recipes[recipe]['instructions']
-                recipe_text = ' '.join(recipe_list)
-                f.write(recipe+'. <RECIPE_TITLE_BREAK>. ')
-                f.write(recipe_text+'. <RECIPE_TEXT_BREAK>. ')
-                for review in reviews:
-                    f.write(review+'. <RECIPE_REVIEW_BREAK>. ')
-                f.write('. <RECIPE_BREAK>. ')
-            except:
-                continue
+# def toTxtFileProcess(unparsed_recipes, output_file, txt_file):
+    # with open(txt_file, 'wb') as f:
+        # for i,recipe in enumerate(unparsed_recipes):
+            # if i == 3:
+                # return
+            # try:
+                # reviews = []
+                # for review in unparsed_recipes[recipe]['reviews']:
+                    # if type(review) == dict:
+                        # reviews.append(review['text'])
+                    # else:
+                        # reviews.append(review)
+                # recipe_list = unparsed_recipes[recipe]['instructions']
+                # recipe_text = ' '.join(recipe_list)
+                # f.write(recipe+'. <RECIPE_TITLE_BREAK>. ')
+                # f.write(recipe_text+'. <RECIPE_TEXT_BREAK>. ')
+                # for review in reviews:
+                    # f.write(review+'. <RECIPE_REVIEW_BREAK>. ')
+                # f.write('. <RECIPE_BREAK>. ')
+            # except:
+                # continue
 def parseSentence(sent):
     split_p = re.split(r' and | or | but |, | thought | although', sent)
     phrases = []
@@ -70,7 +61,7 @@ def parseSentence(sent):
             phrases.append(p)
     return phrases
 
-def parseReviewPhrases(reviews):
+def parseReviewPhrases(reviews,breakIntoPhrases=True):
     parsed = []
     for r in reviews:
         parsed.append([])
@@ -81,12 +72,15 @@ def parseReviewPhrases(reviews):
                 continue
             else:
                 if len(sent) > 2:
-                    parsed[-1].extend(parseSentence(sent))
+                    if breakIntoPhrases:
+                        parsed[-1].extend(parseSentence(sent))
+                    else:
+                        parsed[-1].append(sent)
                     #if parsed_sent:
                     #    parsed[-1].append(parsed_sent)
     return parsed
 
-def parseRecipePhrases(recipe):
+def parseRecipePhrases(recipe, breakIntoPhrases=True):
     parsed = []
     for step in recipe:
         for sent in re.split(r'\.|\?|!', step):
@@ -96,15 +90,15 @@ def parseRecipePhrases(recipe):
                 continue
             else:
                 if len(sent) > 2:
-                    parsed.extend(parseSentence(sent))
+                    if breakIntoPhrases:
+                        parsed.extend(parseSentence(sent))
+                    else:
+                        parsed.append(sent)
                     # if parsed_sent:
                         # parsed.append(parsed_sent)
     return parsed
-def parseRecipeProcess(unparsed_recipes, txt_file, output_file,cpu):
+def parseRecipeProcess(unparsed_recipes, output_file,cpu, breakIntoPhrases):
 
-    # sys.stdout = open("%d.out"%cpu, "a", buffering=0)
-    # sys.stderr = open("%d.out"%cpu, "a", buffering=0)
-    # stan.parse(txt_file, output_file,cpu)
     parsed = {}
     for i,recipe in enumerate(unparsed_recipes):
         reviews = []
@@ -113,8 +107,8 @@ def parseRecipeProcess(unparsed_recipes, txt_file, output_file,cpu):
                 reviews.append(review['text'])
             else:
                 reviews.append(review)
-        reviews = parseReviewPhrases(reviews)
-        recipe_text = parseRecipePhrases(unparsed_recipes[recipe]['instructions'])
+        reviews = parseReviewPhrases(reviews, breakIntoPhrases=breakIntoPhrases)
+        recipe_text = parseRecipePhrases(unparsed_recipes[recipe]['instructions'],breakIntoPhrases=breakIntoPhrases)
         parsed[recipe] = {'instructions':recipe_text, 'reviews':reviews}
         # except:
             # continue
@@ -125,4 +119,4 @@ def parseRecipeProcess(unparsed_recipes, txt_file, output_file,cpu):
     with open(output_file, 'wb') as f:
         pickle.dump(parsed, f)
 if __name__=='__main__':
-    parseRecipes('../scraper/pickle_files/full_dataset.p')
+    parseRecipes('../scraper/pickle_files/full_dataset.p', False)

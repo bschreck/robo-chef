@@ -33,7 +33,7 @@ def generateLanguageModelData(pickle_files_directory, outfile):
 		for chunk in chunks:
 			segments.append( ' ' + chunk + ' \n' ) # pad segment
 
-	segments = symbolicSubstitutions(processesPuntuation(segments))
+	segments = unkSymbolSubstitutions(numSymbolSubstitutions(processesPuntuation(segments)))
 
 	out = open(outfile, 'w')
 	out.writelines(segments)
@@ -42,10 +42,10 @@ def generateLanguageModelData(pickle_files_directory, outfile):
 def processesPuntuation(segments):
 	new_segments = []
 	for s in segments:
-		new_segments.append( s.replace("n't"," n't").replace("'ve"," 've").replace(',', ' ,').replace('/', ' / ').replace('(', '( ').replace(')', ' )') )
+		new_segments.append( s.replace("n't"," n't").replace("'ve"," 've").replace(',', ' ,').replace('/', ' / ').replace('-', ' - ').replace('(', '( ').replace(')', ' )') )
 	return new_segments
 
-def symbolicSubstitutions(segments):
+def unkSymbolSubstitutions(segments):
 	tokens = {}
 	for seg in segments:
 		for t in seg.split(' '):
@@ -54,12 +54,22 @@ def symbolicSubstitutions(segments):
 	for seg in segments:
 		new_seg = []
 		for t in seg.split(' '):
-			if t.isdigit():
-				new_seg.append('<num>')
-			elif tokens[t] > UNK_THRESHOLD:
+			if tokens[t] > UNK_THRESHOLD:
 				new_seg.append(t)
 			else:
 				new_seg.append('<unk>')
+		new_segments.append(' '.join(new_seg))
+	return new_segments
+
+def numSymbolSubstitutions(segments):
+	new_segments = []
+	for seg in segments:
+		new_seg = []
+		for t in seg.split(' '):
+			if t.isdigit():
+				new_seg.append('<num>')
+			else:
+				new_seg.append(t)
 		new_segments.append(' '.join(new_seg))
 	return new_segments
 
@@ -97,7 +107,7 @@ def countWords(data):
 
 
 #######################   PREP DATA   #######################
-generateLanguageModelData('../data/parsed_recipes/', '../data/lm_data.txt')
-splitData('../data/lm_data.txt', 0.05, '../data/lm.train.txt', '../data/lm.valid.txt')
+# generateLanguageModelData('../data/full_sentence_dataset/dataset_p_files/', '../data/lm_data.txt')
+# splitData('../data/lm_data.txt', 0.05, '../data/lm-training/recipes-full-sentences/lm.train.txt', '../data/lm-training/recipes-full-sentences/lm.valid.txt')
 
 

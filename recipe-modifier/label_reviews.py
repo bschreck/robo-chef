@@ -12,7 +12,7 @@ def loadRecipes(all_recipes_file):
     # with open(all_recipes_file, 'wb') as f:
         # pickle.dump(recipes, f)
     # return
-    labeled_file = 'labels.p'
+    labeled_file = all_recipes_file.replace('.p','_labels.p')
     labeler(recipes, labeled_file)
 
 def openLabelFile(labeled_file):
@@ -80,26 +80,8 @@ def labeler(recipes, labeled_file):
 
 
 
-# for key in recipes:
-#     instructions
-#     reviews
-#     RECIPE:
-#         1. ]asdkjsd
-#         2. askdjf
-#         3. sdf
-
-#     REVIEW 1:
-#         1. jaksd
-#         2. lkjasdf
-#         3, lskdj
-#         4. jdkdjf
-
-#     question1: is there a refinement contained in review? y/n
-#     question2: index + modification/insertion (3m, 1i, 5m, 5i, etc.):
-
-
 if __name__ == '__main__':
-    dataset = '../scraper/pickle_files/full_dataset.p'
-    dataset = '10_recipes.p'
+    #dataset = '../scraper/pickle_files/full_dataset.p'
+    dataset = 'end2endtest/test0.p'
     loadRecipes(dataset)
 

@@ -8,14 +8,20 @@ import numpy as np
 import generate_refinements
 import util
 
-def readPickleFile(path, reviews=False):
+def readPickleFile(path, reviews=False, name=False):
     with open(path,'rb') as f:
         recipes = pickle.load(f)
         for recipe in recipes:
             if reviews:
-                yield recipes[recipe]['instructions'], recipes[recipe]['reviews']
+                if name:
+                    yield recipe, recipes[recipe]['instructions'], recipes[recipe]['reviews']
+                else:
+                    yield recipes[recipe]['instructions'], recipes[recipe]['reviews']
             else:
-                yield recipes[recipe]['instructions']
+                if name:
+                    yield recipe, recipes[recipe]['instructions']
+                else:
+                    yield recipes[recipe]['instructions']
 
 def writeRecipeToTxtFile(recipe, path):
     max_phrase_len = 0

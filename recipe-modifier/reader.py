@@ -159,8 +159,9 @@ def _file_to_word_ids(filename, word_to_id, unknown_word_id,buckets):
         recipes[bucket] = np.array(recipes[bucket], dtype=np.int32)
     return labels, refinements, recipes
 
-def getDataFiles(corpus):
-    directory = FLAGS.data_dir
+def getDataFiles(corpus, directory = None):
+    if not directory:
+        directory = FLAGS.data_dir
     files = [os.path.join(directory,f) for f in os.listdir(directory) if (
                                     os.path.isfile(os.path.join(directory,f)) and
                                     os.path.join(directory,f).endswith('.txt') and
@@ -191,6 +192,7 @@ def recipe_iterator(labels, refinements, recipes, batch_size, all_buckets=False)
     if not all_buckets:
         fraction_each_bucket = total_each_bucket / data_len
         fraction_each_bucket = [[f,i] for i,f in enumerate(fraction_each_bucket)]
+        print 'fraction_each_bucket:', fraction_each_bucket
         fraction_each_bucket = sorted(fraction_each_bucket, key=lambda x:x[0])
         for i,f in enumerate(fraction_each_bucket[1:]):
             fraction_each_bucket[i+1][0] = f[0] + fraction_each_bucket[i][0]
@@ -294,6 +296,14 @@ def batch_iterator(word_to_id, batch_size, corpus, initial_buckets, all_buckets=
                     refinements = np.rollaxis(refinements, 1,0)
                     recipes = np.rollaxis(np.rollaxis(recipes,1,0),2,1)
                     labels  = _index_to_ohe(labels, recipes.shape[0])
+                    if refinements.shape[-1] != FLAGS.batch_size or \
+                            recipes.shape[-1] != FLAGS.batch_size or \
+                            labels.shape[-1] != FLAGS.batch_size:
+                                print "INCORRECT BATCH SIZE:"
+                                print "refinements:", refinements.shape
+                                print "recipes:", recipes.shape
+                                print "labels:", labels.shape
+                                continue
                     yield bucket_id, labels, refinements, recipes
 
 # word_to_id = build_vocab(TRAIN_CORPUS)

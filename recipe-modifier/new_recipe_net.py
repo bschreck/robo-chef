@@ -20,8 +20,8 @@ import reader
 
 
 tf.app.flags.DEFINE_string("train_dir", '/local/robotChef/recipe-modifier/train', "Training directory where checkpoints should be saved.")
-tf.app.flags.DEFINE_string("data_dir", '/local/robotChef/recipe-modifier/dataset', "Data directory.")
-#tf.app.flags.DEFINE_string("data_dir", '/local/robotChef/recipe-modifier/full_sentence_dataset', "Data directory.")
+#tf.app.flags.DEFINE_string("data_dir", '/local/robotChef/recipe-modifier/dataset', "Data directory.")
+tf.app.flags.DEFINE_string("data_dir", '/local/robotChef/recipe-modifier/full_sentence_dataset', "Data directory.")
 tf.app.flags.DEFINE_string("vocab_file", '/local/robotChef/recipe-modifier/vocab.p', "vocab file.")
 tf.app.flags.DEFINE_string("vocab_dict_file", '/local/robotChef/recipe-modifier/vocab_dict.p', "vocab dict file.")
 tf.app.flags.DEFINE_string("model_path", '/local/robotChef/recipe-modifier/model', "Path for trained model.")
@@ -45,8 +45,8 @@ _initial_buckets = [(20,15), (30,20), (40,25), (50,30), (60,35)]
 
 
 class RecipeNet(object):
-    def __init__(self, is_training, config):
-        self._batch_size = FLAGS.batch_size
+    def __init__(self, is_training, config,batch_size=FLAGS.batch_size):
+        self._batch_size = batch_size
 
 
         encoder_size = config.encoder_hidden_size
@@ -144,7 +144,7 @@ class RecipeNet(object):
                     bucket_target = []
                     bucket_weights = []
                 forward_attention_weights = []
-                backward_attention_weights = []
+                #backward_attention_weights = []
                 for i in xrange(phrase_num):
                     with tf.variable_scope("bucket_model_outside",reuse=outside_reuse):
                         bucket_target.append(self._target[i])
@@ -152,13 +152,13 @@ class RecipeNet(object):
                     if j > 0 and i < self.buckets[j-1][0]:
                         with tf.variable_scope("attention", reuse=True):
                             forward_weight = tf.get_variable("forward_attention_weight%d"%(i))
-                            backward_weight = tf.get_variable("backward_attention_weight%d"%(i))
+                            #backward_weight = tf.get_variable("backward_attention_weight%d"%(i))
                     else:
                         with tf.variable_scope("attention", reuse=None):
                             forward_weight = tf.get_variable("forward_attention_weight%d"%(i), [self._batch_size], dtype=tf.float32)
-                            backward_weight = tf.get_variable("backward_attention_weight%d"%(i), [self._batch_size], dtype=tf.float32)
+                            #backward_weight = tf.get_variable("backward_attention_weight%d"%(i), [self._batch_size], dtype=tf.float32)
                     forward_attention_weights.append(forward_weight)
-                    backward_attention_weights.append(backward_weight)
+                    #backward_attention_weights.append(backward_weight)
                     with tf.variable_scope("bucket_model_outside",reuse=outside_reuse):
                         bucket_recipe_segments_inputs.append([])
                         for k in xrange(phrase_len):
@@ -166,7 +166,7 @@ class RecipeNet(object):
 
                 with tf.variable_scope("bucket_model_outside",reuse=outside_reuse):
                     bucket_logits = self.build_rnn_model(bucket_refinement_inputs, bucket_recipe_segments_inputs,
-                                                        forward_attention_weights, backward_attention_weights)
+                                                        forward_attention_weights)#, backward_attention_weights)
                     outputs.append(bucket_logits)
                     loss = seq2seq.sequence_loss_by_example(bucket_logits,
                                                     bucket_target,
@@ -176,7 +176,7 @@ class RecipeNet(object):
                     tf.histogram_summary("cost_bucket_%d"%j, costs[-1])
         for i,f in enumerate(forward_attention_weights):
             tf.histogram_summary("forward_attention_weight%d"%i, f)
-            tf.histogram_summary("backward_attention_weight%d"%i, backward_attention_weights[i])
+            #tf.histogram_summary("backward_attention_weight%d"%i, backward_attention_weights[i])
         return outputs, losses, costs
 
     def get_encoded_segment(self, segment, reuse):
@@ -186,7 +186,7 @@ class RecipeNet(object):
             encoder_outputs, encoder_states = rnn.rnn(self.encoder, inputs, initial_state=self._initial_encoder_state)
         return encoder_outputs[-1]
 
-    def build_rnn_model(self, refinement, recipe_segments, forward_attention_weights, backward_attention_weights):
+    def build_rnn_model(self, refinement, recipe_segments, forward_attention_weights):#, backward_attention_weights):
         #print('unrolling refinement encoder net')
         encoded_refinement = self.get_encoded_segment(refinement, None)
 
@@ -197,20 +197,23 @@ class RecipeNet(object):
             encoded_recipe_segments.append(self.get_encoded_segment(segment, True))
 
         inputs = [tf.concat(1,[encoded_refinement, seg]) for seg in encoded_recipe_segments]
-        backward_inputs = [tf.concat(1,[encoded_refinement, seg]) for seg in list(reversed(encoded_recipe_segments))]
+        #backward_inputs = [tf.concat(1,[encoded_refinement, seg]) for seg in list(reversed(encoded_recipe_segments))]
+
         #print('unrolling recipe processor net')
         with tf.variable_scope("recipe_processor") as scope:
             recipe_processor_outputs, recipe_processor_states = rnn.rnn(self.recipe_processor, inputs, initial_state=self._initial_recipe_processor_state)
-            scope.reuse_variables()
-            backward_recipe_processor_outputs, backward_recipe_processor_states = rnn.rnn(self.recipe_processor, inputs, initial_state=self._initial_recipe_processor_state)
+            #scope.reuse_variables()
+            #backward_recipe_processor_outputs, backward_recipe_processor_states = rnn.rnn(self.recipe_processor, inputs, initial_state=self._initial_recipe_processor_state)
 
         logits_per_index = []
         for i,output in enumerate(recipe_processor_outputs):
-            forward_logit = tf.mul(tf.transpose(tf.pack([forward_attention_weights[i], forward_attention_weights[i]])),
-                                            tf.nn.xw_plus_b(output, self.index_predictor_W, self.index_predictor_b))
-            backward_logit = tf.mul(tf.transpose(tf.pack([backward_attention_weights[i], backward_attention_weights[i]])),
-                                        tf.nn.xw_plus_b(backward_recipe_processor_outputs[-(i+1)], self.index_predictor_W, self.index_predictor_b))
-            logits_per_index.append(forward_logit + backward_logit)
+            #forward_logit = tf.mul(tf.transpose(tf.pack([forward_attention_weights[i], forward_attention_weights[i]])),
+            #                                tf.nn.xw_plus_b(output, self.index_predictor_W, self.index_predictor_b))
+            forward_logit = tf.nn.xw_plus_b(output, self.index_predictor_W, self.index_predictor_b)
+            #backward_logit = tf.mul(tf.transpose(tf.pack([backward_attention_weights[i], backward_attention_weights[i]])),
+            #                            tf.nn.xw_plus_b(backward_recipe_processor_outputs[-(i+1)], self.index_predictor_W, self.index_predictor_b))
+            #logits_per_index.append(forward_logit + backward_logit)
+            logits_per_index.append(forward_logit)
         return logits_per_index
 
     def calc_gradients(self):
@@ -250,17 +253,17 @@ class RecipeNet(object):
             if l < phrase_len:
                 input_feed[self._input_refinement[l].name] = refinement[l]
             else:
-                input_feed[self._input_refinement[l].name] = np.zeros(FLAGS.batch_size)
+                input_feed[self._input_refinement[l].name] = np.zeros(self._batch_size)
         for l in xrange(max_phrase_num):
             if l < phrase_num:
                 input_feed[self._target[l].name] = target[l]
             else:
-                input_feed[self._target[l].name] = np.zeros(FLAGS.batch_size)
+                input_feed[self._target[l].name] = np.zeros(self._batch_size)
             for k in xrange(max_phrase_len):
                 if k < phrase_len and l < phrase_num:
                     input_feed[self._input_recipe_segments[l][k].name] = recipe_segments[l][k]
                 else:
-                    input_feed[self._input_recipe_segments[l][k].name] = np.zeros(FLAGS.batch_size)
+                    input_feed[self._input_recipe_segments[l][k].name] = np.zeros(self._batch_size)
 
 
         # Output feed: depends on whether we do a backward step or not.
@@ -346,12 +349,12 @@ class Config(object):
         self.vocab_size = vocab_size
         self.buckets = buckets
 
-def create_model(session, config, is_training):
+def create_model(session, config, is_training,batch_size=FLAGS.batch_size):
     """Create translation model and initialize or load parameters in session."""
 
     initializer = tf.random_uniform_initializer(-config.init_scale, config.init_scale)
     with tf.variable_scope("model", initializer=initializer):
-        model = RecipeNet(is_training, config)
+        model = RecipeNet(is_training, config, batch_size=batch_size)
 
     summary_op = tf.merge_all_summaries()
     ckpt = tf.train.get_checkpoint_state(FLAGS.train_dir)
@@ -452,19 +455,41 @@ def train():
 
 
 
+def eval(recipes, refinements, targets):
+    #TODO: make sure that recipes and refinements are smaller than 4th bucket
+
+    word_to_id = reader.build_vocab()
+    vocab_size = len(word_to_id)
+
+    buckets = _initial_buckets[:4]
 
 
+    config = Config(vocab_size, buckets)
 
+    with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
+        model,summary_op = create_model(sess, config, True, batch_size=1)
+
+        perplexities = []
+        predicted_indices = []
+        for i,recipe in enumerate(recipes):
+            max_phrase_len, phrase_num = getMaxPhraseLenAndNum(recipe, refinements[i])
+            bucket = reader._get_bucket(max_phrase_len, phrase_num, buckets)
+            for j,_bucket in buckets:
+                if bucket == _bucket:
+                    bucket_id = j
+                    break
+            _, _, cost, output_logits = model.step(sess, refinements[i], recipe,
+                                                 targets[i], bucket_id, True, summary_op, False)
+            ppx = math.exp(cost) if cost < 300 else float('inf')
+            perplexities.append(ppx)
+
+            outputs = [int(np.argmax(logit, axis=1)) for logit in output_logits]
+            current_indices = [j for j,output in enumerate(outputs) if output == 1]
+            predicted_indices.append(current_indices)
+        return predicted_indices, perplexities
 
 
 def main(unused_args):
-    if not FLAGS.data_dir:
-        raise ValueError("Must set --data_dir to PTB data directory")
-    if not FLAGS.train_dir:
-        raise ValueError("Must set --train_dir to PTB data directory")
-    if not FLAGS.model_path:
-        raise ValueError("Must set --model_path to an output directory")
-
     train()
 
 

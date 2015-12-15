@@ -19,7 +19,7 @@ The code in *recipe-modifier/* can be used to train a network that will, given a
 The model can be found at *recipe-modifier/new_recipe_net.py*.
 
 ## Baselines
-*baselines.py* computes some baseline scores for the task of index prediction given a refinement and a recipe. We show the Top-1 and Top-3 **error** rates for two tasks:
+*baselines.py* computes some baseline scores for the task of index prediction given a refinement and a recipe. The baseline models use a simple word-count-vector representation for segments and a few basic distance metrics to find the best scoring index. We show the Top-1 and Top-3 **error** rates for two tasks:
   1. identification of index for a **modification** refinement
   2. identification of index for an **insertion** refinement
 

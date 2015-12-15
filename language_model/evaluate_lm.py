@@ -7,8 +7,10 @@ import tensorflow as tf
 
 import recipe_lm as lm
 
-tf.app.flags.DEFINE_string("train_data_path", None, "data_path")
-tf.app.flags.DEFINE_string("trained_model_path", None, "trained_model_path")
+tf.app.flags.DEFINE_string("train_data_path", '../data/lm-training/recipes-full-sentences/', "train_data_path")
+tf.app.flags.DEFINE_string("trained_model_path", '../trained-models/lm/recipe_sentences_model.ckpt', "trained_model_path")
+tf.app.flags.DEFINE_string("ptb_train_data_path", '../data/lm-training/ptb/', "ptb_train_data_path")
+tf.app.flags.DEFINE_string("ptb_trained_model_path", '../trained-models/lm/ptb_model.ckpt', "ptb_trained_model_path")
 tf.app.flags.DEFINE_string("test_file", None, "Path to test file")
 tf.app.flags.DEFINE_string("model_size", "small","A type of model. Possible options are: small, medium, large.")
 
@@ -28,8 +30,8 @@ def process_test_file(filename):
 			labels.append(label)
 	return examples, labels
 
-def score_predictions(predicted_ll, threshold, true_labels):
-	pred_labels = (np.exp(np.array(predicted_ll)) > threshold) * 1
+def score_predictions(predicted_proba, threshold, true_labels):
+	pred_labels = (predicted_proba > threshold) * 1
 
 	truePos, falsePos, trueNeg, falseNeg = 0.0, 0.0, 0.0, 0.0
 	for predLabel, trueLabel in zip(pred_labels, true_labels):
@@ -112,15 +114,17 @@ def precision(truePos, falsePos):
 		return float('nan')
 
 def evaluateLM(review_segments, labels):
-	print review_segments[0]
-	scores = lm.scoreData(review_segments, FLAGS.train_data_path, FLAGS.trained_model_path, FLAGS.model_size)
+	rlm_scores = np.exp(np.array( lm.scoreData(review_segments, FLAGS.train_data_path, FLAGS.trained_model_path, FLAGS.model_size) ))
+	ptblm_scores = np.exp(np.array( lm.scoreData(review_segments, FLAGS.ptb_train_data_path, FLAGS.ptb_trained_model_path, FLAGS.model_size) ))
+
+	scores = rlm_scores / (rlm_scores + ptblm_scores)
 
 	best_F1 = 0
 	best_threshold = 0
 
 	true_positive_rates = []
 	false_positive_rates = []
-	for p in np.arange(0.0, 1.0005, 0.001):
+	for p in np.arange(0.0, 1.00005, 0.0001):
 		tp, fp, tn, fn = score_predictions(scores, p, labels)
 		true_positive_rates.append(recall(tp,fn))
 		false_positive_rates.append(1 - specificity(tn, fp))
@@ -134,22 +138,19 @@ def evaluateLM(review_segments, labels):
 	auroc = metrics.auc(false_positive_rates, true_positive_rates, reorder=True)
 
 	# plot ROC curve
+	print('\n\n==> Plotting ROC\n')
 	pylab.figure()
 	pylab.plot(false_positive_rates, true_positive_rates)
 	pylab.plot([0,1], [0,1,], '--')
-	pylab.title('ROC Curve at different thresholds' +  ' (AUROC = ' + str(round(auroc, 3)) + ')')
+	pylab.title('Refinement Classification with LM' +  ' (AUROC = ' + str(round(auroc, 3)) + ')')
 	pylab.xlabel('False positive rate')
 	pylab.ylabel('True positive rate')
 	pylab.show()
 
-	print('Best F1 score was {0} with threshold = {1}'.format(best_F1, best_threshold))
+	print('Best F1 score was {0}% with threshold = {1}\n'.format(100 * best_F1, best_threshold))
 
 
 def main(_):
-	if not FLAGS.train_data_path:
-		raise ValueError("Must set --train_data_path to PTB data directory")
-	if not FLAGS.trained_model_path:
-		raise ValueError("Must set --trained_model_path to an output directory")
 	if FLAGS.test_file is None:
 		raise ValueError("Must set --test_file")
 	

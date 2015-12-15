@@ -124,7 +124,6 @@ def writeAllRecipes(dataset, train_file_path, valid_file_path, test_file_path, m
         f.write("max_phrase_num %s\n"%max_phrase_num)
         f.write("max_phrase_len %s\n"%max_phrase_len)
 
-
 if __name__ == '__main__':
     dataset_dir = 'pck_dataset'
 

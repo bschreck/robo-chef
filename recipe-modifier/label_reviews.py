@@ -47,30 +47,28 @@ def labeler(recipes, labeled_file):
             for j, phrase in enumerate(review):
                 print "\n"
                 print "Phrase %d\n>>> \"%s\""%(j, phrase)
-                check_refinement = str(raw_input("-->Refinement in phrase? "))
-                if check_refinement == "y":
-                    while True:
-                        indexing = str(raw_input("-->Line + Modification or Insertion? "))
-                        if indexing.startswith('q'):
-                            pickle.dump( labeled_recipes, open( labeled_file, "wb" ) )
-                            sys.exit()
+                while True:
+                    check_refinement = str(raw_input("-->Refinement in phrase? "))
+                    if check_refinement.startswith('q'):
+                        pickle.dump( labeled_recipes, open( labeled_file, "wb" ) )
+                        sys.exit()
+                    elif check_refinement.endswith('m') or check_refinement.endswith('i'):
+                        info = str(check_refinement[-1])
+                        try:
+                            indexing = int(check_refinement[:-1])
+                        except:
+                            print 'Enter an integer plus m or i'
                         else:
-                            info = str(indexing[-1])
-                            try:
-                                indexing = int(indexing[:-1])
-                            except:
-                                print 'Enter an integer plus m or i'
+                            if indexing < len(recipe_text)+1:
+                                current_label[i][j] = (indexing,info)
+                                break
                             else:
-                                if indexing < len(recipe_text)+1:
-                                    current_label[i][j] = (indexing,info)
-                                    break
-                                else:
-                                    print 'Integer must be less than length of recipe steps'
-                elif check_refinement.startswith('q'):
-                    pickle.dump( labeled_recipes, open( labeled_file, "wb" ) )
-                    sys.exit()
-                else:
-                    current_label[i][j] = None
+                                print 'Integer must be less than length of recipe steps'
+                    elif check_refinement.startswith('n'):
+                        current_label[i][j] = None
+                        break
+                    else:
+                        print 'Wrong format'
         labeled_recipes[recipe] = current_label
 
         if r_i%10 == 0:

@@ -8,7 +8,7 @@ import sys
 import time
 import copy
 import cPickle as pickle
-import util
+import util as util
 
 import tensorflow.python.platform
 
@@ -105,6 +105,36 @@ def _get_bucket(num_words, num_phrases, buckets):
     # indices.append(indices[-1]+1)
     # expanded_recipe[indices,:,:] = recipe
     # return expanded_recipe
+
+def refinement_str_list_to_rnn_format(refinement, word_to_id, unknown_word_id,bucket):
+    refinement = [word_to_id[w] if w in word_to_id else unknown_word_id for w in refinement]
+    refinement.append(word_to_id['<eop>'])
+    nprefinement = np.zeros(bucket[1], dtype=np.int32)
+    nprefinement.fill(PAD_ID)
+    nprefinement[:len(refinement)] = refinement
+    return nprefinement
+
+def recipe_str_list_to_rnn_format(recipe, word_to_id, unknown_word_id, buckets, max_current_num_words):
+    for i,phrase in enumerate(recipe[:-1]):
+        recipe[i] = [word_to_id[w] if w in word_to_id else unknown_word_id for w in phrase]
+        recipe[i].append(word_to_id['<eop>'])
+        if len(recipe[i]) > max_current_num_words:
+            max_current_num_words = len(recipe[i])
+    #this actually doesn't do anything
+    #recipe[-1].append(word_to_id['<eor>'])
+
+    current_num_phrases = len(recipe)
+    #get bucket accounting for blanks every other phrase (for insertion)
+    bucket = _get_bucket(max_current_num_words, 2*current_num_phrases, buckets)
+
+    nprecipe = np.zeros((bucket[0],bucket[1]), dtype=np.int32)
+    nprecipe.fill(PAD_ID)
+    #fill nprecipe with ndarray versions of each phrase,
+    #every other line, not including the very last phrase
+    #which is just an <eor> symbol
+    for i,phrase in enumerate(recipe[:-1]):
+        nprecipe[2*i+1,:len(phrase)] = np.array(phrase)
+    return nprecipe,bucket
 def _file_to_word_ids(filename, word_to_id, unknown_word_id,buckets):
     #buckets = [(max number of phrases, max number of words per phrase)]
     #last bucket needs to be max of both values
@@ -124,31 +154,12 @@ def _file_to_word_ids(filename, word_to_id, unknown_word_id,buckets):
         else:
             #replacement comes at every line
             label = 2*(label-1) + 1
-        refinement = [word_to_id[w] if w in word_to_id else unknown_word_id for w in refinement]
-        refinement.append(word_to_id['<eop>'])
-        max_current_num_words = len(refinement)
+        max_current_num_words = len(refinement)+1# plus 1 for <eop> at end
+        nprecipe,bucket = recipe_str_list_to_rnn_format(recipe,
+                                            word_to_id, unknown_word_id,buckets, max_current_num_words)
 
-        for i,phrase in enumerate(recipe[:-1]):
-            recipe[i] = [word_to_id[w] if w in word_to_id else unknown_word_id for w in phrase]
-            recipe[i].append(word_to_id['<eop>'])
-            if len(recipe[i]) > max_current_num_words:
-                max_current_num_words = len(recipe[i])
-        recipe[-1].append(word_to_id['<eor>'])
-        current_num_phrases = len(recipe)
-        #get bucket accounting for blanks every other phrase (for insertion)
-        bucket = _get_bucket(max_current_num_words, 2*current_num_phrases, buckets)
-
-        nprefinement = np.zeros(bucket[1], dtype=np.int32)
-        nprefinement.fill(PAD_ID)
-        nprefinement[:len(refinement)] = refinement
-
-        nprecipe = np.zeros((bucket[0],bucket[1]), dtype=np.int32)
-        nprecipe.fill(PAD_ID)
-        #fill nprecipe with ndarray versions of each phrase,
-        #every other line, not including the very last phrase
-        #which is just an <eor> symbol
-        for i,phrase in enumerate(recipe[:-1]):
-            nprecipe[2*i+1,:len(phrase)] = np.array(phrase)
+        nprefinement = refinement_str_list_to_rnn_format(refinement,
+                                            word_to_id, unknown_word_id,bucket)
 
         recipes[bucket].append(nprecipe)
         labels[bucket].append(label)
@@ -269,7 +280,6 @@ def batch_iterator(word_to_id, batch_size, corpus, initial_buckets, all_buckets=
     buckets=copy.copy(initial_buckets)
     buckets.append((2*max_phrase_num, max_phrase_len))
 
-    vocab = len(word_to_id)
 
     start = True
     while True:
@@ -305,6 +315,101 @@ def batch_iterator(word_to_id, batch_size, corpus, initial_buckets, all_buckets=
                                 print "labels:", labels.shape
                                 continue
                     yield bucket_id, labels, refinements, recipes
+def phrases2int(phrases,word_to_id, unknown_word_id,buckets,max_current_num_words):
+    #TODO: do something very similar to _file_to_word_ids,
+    #still need to do splitting, still need to add blanks, still need to find bucket
+    split = [[w for w in phrase.split(' ') if len(w)>0] for phrase in phrases]
+    #not exactly
+    int_phrases,bucket = str_list_to_rnn_format(split,
+                        word_to_id, unknown_word_id,buckets,0)
+    return int_phrases
+
+def getLabeledFiles(directory):
+    label_files = [os.path.join(directory,f) for f in os.listdir(directory) if (
+                                    os.path.isfile(os.path.join(directory,f)) and
+                                    os.path.join(directory,f).endswith('.p') and
+                                    os.path.join(directory,f).find('label') > -1)]
+    data_files = [os.path.join(directory,f) for f in os.listdir(directory) if (
+                                    os.path.isfile(os.path.join(directory,f)) and
+                                    os.path.join(directory,f).endswith('.p') and
+                                    os.path.join(directory,f).find('label') == -1)]
+
+    matches = []
+    for l in label_files:
+        for d in data_files:
+            data_file_ending = d.split('/')[-1].split('test')[-1].split('.p')[0]
+            label_ending = l.split('/')[-1].split('test')[-1].split('_label')[0]
+            if label_ending == data_file_ending:
+                matches.append((l,d))
+                break
+    return matches
+def readLabelFile(filename):
+    with open(filename, 'rb') as f:
+        recipes = pickle.load(f)
+        return recipes
+def readData(label_file, data_file):
+    labels = readLabelFile(label_file)
+    with open(data_file, 'rb') as f:
+        recipes = pickle.load(f)
+        for recipe in recipes:
+            if recipe in labels:
+                yield recipes[recipe]['instructions'], recipes[recipe]['reviews'], labels[recipe]
+
+def bucket_id_from_bucket(bucket,buckets):
+    for j,_bucket in enumerate(buckets):
+        if bucket == _bucket:
+            return j
+
+
+def end2end_iterator(word_to_id, buckets, label_directory):
+    filenames = getLabeledFiles(label_directory)
+    for label_file, data_file in filenames:
+        for instructions, reviews, labels in readData(label_file, data_file):
+            split_instructions = [[w for w in phrase.split(' ') if len(w)>0] for phrase in instructions]
+            too_long = False
+            for p in split_instructions:
+                if len(p) + 1> buckets[-1][1]:
+                    too_long = True
+                    break
+            if too_long:
+                continue
+            split_instructions.append([])#for <eor> token
+            if len(split_instructions) > buckets[-1][0]:
+                continue
+
+            for i,review in enumerate(reviews):
+                for j,refinement in enumerate(review):
+                    split_refinement = [w for w in refinement.split(' ') if len(w)>0]
+                    max_current_num_words = len(split_refinement) + 1
+                    if max_current_num_words > buckets[-1][1]:
+                        continue
+
+                    label_tuple = labels[i][j]
+                    if not label_tuple:
+                        label = None
+                    else:
+                        r_type = label_tuple[1]
+                        r_index = label_tuple[0]
+                        if r_type == 'm':
+                            label = 2*r_index + 1
+                        elif r_type == 'i':
+                            label = 2*r_index
+                        else:
+                            raise ValueError, "r_type must be m or i, not %s"%r_type
+
+                    nprecipe, bucket = recipe_str_list_to_rnn_format(copy.copy(split_instructions), word_to_id, UNK_ID, buckets, max_current_num_words)
+                    nprecipe = np.expand_dims(nprecipe,axis=2)
+
+                    nprefinement = refinement_str_list_to_rnn_format(split_refinement, word_to_id, UNK_ID,bucket)
+                    nprefinement = np.expand_dims(nprefinement,axis=1)
+
+                    bucket_id = bucket_id_from_bucket(bucket, buckets)
+
+                    if label:
+                        label  = _index_to_ohe(np.expand_dims(label, axis=0), nprecipe.shape[0])
+                    else:
+                        label = np.zeros((nprecipe.shape[0],1))
+                    yield refinement, nprecipe, nprefinement, label, bucket_id
 
 # word_to_id = build_vocab(TRAIN_CORPUS)
 # init_buckets = [(10,15), (15,20), (20,25), (25,30), (30,35)]

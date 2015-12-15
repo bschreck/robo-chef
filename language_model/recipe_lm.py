@@ -251,6 +251,9 @@ class LargeConfig(object):
 
 def run_epoch(session, m, data, eval_op, verbose=False):
   """Runs the model on the given data."""
+  if len(data) <= 1:
+    return np.inf
+
   epoch_size = ((len(data) // m.batch_size) - 1) // m.num_steps
   start_time = time.time()
   costs = 0.0

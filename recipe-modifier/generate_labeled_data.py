@@ -21,14 +21,14 @@ def generateLanguageModelTestSet(data_pickle_path, labels_pickle_path, out_path)
 			labels_p = pickle.load(labels_f)
 
 			for recipe in labels_p:
-				recipe_segments = data_p[recipe]['instructions']
-				for r_i in range(len(data_p[recipe]['reviews'])):
-					review_segments = data_p[recipe]['reviews'][r_i]
-					review_segment_labels = labels_p[recipe][r_i]
-					for s_i in range(len(review_segments)):
-						# generate example
-						e = build_language_model_example(review_segments[s_i], review_segment_labels[s_i] is not None)
-						data_examples.append(e)
+				if recipe in data_p:
+					for r_i in range(len(data_p[recipe]['reviews'])):
+						review_segments = data_p[recipe]['reviews'][r_i]
+						review_segment_labels = labels_p[recipe][r_i]
+						for s_i in range(len(review_segments)):
+							# generate example
+							e = build_language_model_example(review_segments[s_i], review_segment_labels[s_i] is not None)
+							data_examples.append(e)
 
 	out = open(out_path, 'a')
 	out.writelines(data_examples)
@@ -56,17 +56,18 @@ def generateLabeledDataFile(data_pickle_path, labels_pickle_path, out_path):
 			labels_p = pickle.load(labels_f)
 
 			for recipe in labels_p:
-				recipe_segments = data_p[recipe]['instructions']
-				for r_i in range(len(data_p[recipe]['reviews'])):
-					review_segments = data_p[recipe]['reviews'][r_i]
-					review_segment_labels = labels_p[recipe][r_i]
-					for s_i in range(len(review_segments)):
-						if review_segment_labels[s_i] is not None:
-							refinement = review_segments[s_i]
-							index_into_recipe, refinement_type = review_segment_labels[s_i]
-							# generate example
-							e = build_example(recipe_segments, refinement, refinement_type, index_into_recipe)
-							data_examples.append(e)
+				if recipe in data_p:
+					recipe_segments = data_p[recipe]['instructions']
+					for r_i in range(len(data_p[recipe]['reviews'])):
+						review_segments = data_p[recipe]['reviews'][r_i]
+						review_segment_labels = labels_p[recipe][r_i]
+						for s_i in range(len(review_segments)):
+							if review_segment_labels[s_i] is not None:
+								refinement = review_segments[s_i]
+								index_into_recipe, refinement_type = review_segment_labels[s_i]
+								# generate example
+								e = build_example(recipe_segments, refinement, refinement_type, index_into_recipe)
+								data_examples.append(e)
 
 	out = open(out_path, 'a')
 	out.writelines(data_examples)

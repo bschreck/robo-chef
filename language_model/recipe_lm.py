@@ -85,7 +85,7 @@ flags = tf.flags
 flags.DEFINE_string(
     "model", "small",
     "A type of model. Possible options are: small, medium, large.")
-flags.DEFINE_string("data_path", '../data/lm-training/recipes/', "data_path")
+flags.DEFINE_string("data_path", None, "data_path")
 flags.DEFINE_string("model_path", None, "model_path")
 flags.DEFINE_string('review_segments_path', None, 'review_segments_path')
 flags.DEFINE_boolean("train", True, "whether to train the model (or reuse pre-trained parameters)")

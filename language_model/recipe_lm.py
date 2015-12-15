@@ -51,17 +51,21 @@ The hyperparameters used in the model:
 - lr_decay - the decay of the learning rate for each epoch after "max_epoch"
 - batch_size - the batch size
 
-To compile on CPU:
-  bazel build -c opt tensorflow/models/rnn/ptb:ptb_word_lm
-To compile on GPU:
-  bazel build -c opt tensorflow --config=cuda \
-    tensorflow/models/rnn/ptb:ptb_word_lm
-To run:
-  ./bazel-bin/.../ptb_word_lm --data_path=/tmp/simple-examples/data/
+To train:
+  python recipe_lm.py \
+    --data_path=< path to directory with lm.train.txt and lm.valid.txt > \
+    --model_path=< file in which to save trained parameters > \
+    --train 1
+
+To score test file:
+  python recipe_lm.py \
+    --data_path=< path to directory with lm.train.txt and lm.valid.txt > \
+    --model_path=< file from which to restore trained parameters > \
+    --notrain \
+    --review_segments_path=< file of segments to score >
 
 """
 from __future__ import absolute_import
-# from __future__ import division
 from __future__ import print_function
 
 import time
@@ -77,12 +81,11 @@ from tensorflow.models.rnn import seq2seq
 import reader
 
 flags = tf.flags
-logging = tf.logging
 
 flags.DEFINE_string(
     "model", "small",
     "A type of model. Possible options are: small, medium, large.")
-flags.DEFINE_string("data_path", None, "data_path")
+flags.DEFINE_string("data_path", '../data/lm-training/recipes/', "data_path")
 flags.DEFINE_string("model_path", None, "model_path")
 flags.DEFINE_string('review_segments_path', None, 'review_segments_path')
 flags.DEFINE_boolean("train", True, "whether to train the model (or reuse pre-trained parameters)")
@@ -203,11 +206,10 @@ class SmallConfig(object):
   num_steps = 20
   hidden_size = 200
   max_epoch = 4
-  max_max_epoch = 8  # TODO: change back to 13
+  max_max_epoch = 8
   keep_prob = 1.0
   lr_decay = 0.5
   batch_size = 20
-  # vocab_size = 10000
 
   def __init__(self, n=10000):
     self.vocab_size = n
@@ -225,7 +227,6 @@ class MediumConfig(object):
   keep_prob = 0.5
   lr_decay = 0.8
   batch_size = 20
-  # vocab_size = 10000
 
   def __init__(self, n=10000):
     self.vocab_size = n
@@ -243,7 +244,6 @@ class LargeConfig(object):
   keep_prob = 0.35
   lr_decay = 1 / 1.15
   batch_size = 20
-  # vocab_size = 10000
 
   def __init__(self, n=10000):
     self.vocab_size = n
@@ -317,7 +317,7 @@ def train_model(data_path, model_path, model_size):
     save_path = saver.save(session, model_path)
     print("Model saved in file: {0}".format(save_path))
 
-def scoreData(review_segments, data_path, model_path, model_size):
+def scoreData(review_segments, data_path, model_path, model_size, verbose=False):
   raw_data = reader.get_raw_training_data(data_path)
   train_data, valid_data, vocab_size, word_to_id = raw_data
 
@@ -348,16 +348,17 @@ def scoreData(review_segments, data_path, model_path, model_size):
     for segment in segments_data:
       loglikelihood = -np.log(run_epoch(session, model, segment, tf.no_op()))
       segments_scores.append(loglikelihood)
-      print("Test Avg Loglikelihood: %.3f" % loglikelihood)
+      if verbose:
+        print("Test Avg Loglikelihood: %.3f" % loglikelihood)
 
   return segments_scores
 
 
 def main(unused_args):
   if not FLAGS.data_path:
-    raise ValueError("Must set --data_path to PTB data directory")
+    raise ValueError("Must set --data_path to training data directory")
   if not FLAGS.model_path:
-    raise ValueError("Must set --model_path to an output directory")
+    raise ValueError("Must set --model_path to an output file")
 
   if FLAGS.train:
     print('==> Training model')
@@ -368,7 +369,7 @@ def main(unused_args):
     print('==> Evaluating model on review segments')
     with tensorflow.python.platform.gfile.GFile(FLAGS.review_segments_path, "r") as f:
       review_segments = f.readlines()
-      scoreData(review_segments, FLAGS.data_path, FLAGS.model_path, FLAGS.model)
+      scoreData(review_segments, FLAGS.data_path, FLAGS.model_path, FLAGS.model, verbose=True)
 
 
 if __name__ == "__main__":

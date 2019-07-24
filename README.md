@@ -1,6 +1,6 @@
 robotChef
 =========
-#####*Ben Schreck, Nico Rakover, Ambika Krishnamachar*
+## Ben Schreck, Nico Rakover, Ambika Krishnamachar*
 ---------
 
 
